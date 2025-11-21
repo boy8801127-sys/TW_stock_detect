@@ -1,0 +1,14 @@
+{
+  "timestamp": 1762416025,
+  "source": "https://mis.taifex.com.tw/futures/api/getQuoteListVIX",
+  "data": {
+    "vix": {
+      "raw": "26.71",
+      "value": 26.71
+    }
+  },
+  "meta": {
+    "status": "ok",
+    "elapsed_ms": 1195
+  }
+}

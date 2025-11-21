@@ -1,0 +1,7 @@
+{
+  "timestamp": 1762398830640,
+  "status": 405,
+  "error": "Method Not Allowed",
+  "message": "Request method 'GET' not supported",
+  "path": "/futures/api/getQuoteListVIX"
+}

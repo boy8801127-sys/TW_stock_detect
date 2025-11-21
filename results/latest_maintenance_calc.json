@@ -1,0 +1,44 @@
+{
+  "timestamp": 1762571560,
+  "source": "https://openapi.twse.com.tw/v1/exchangeReport/MI_MARGN",
+  "data": {
+    "maintenance_calc": {
+      "ok": true,
+      "numerator": 531132114130.0,
+      "numerator_billion": 5311.3211413,
+      "denominator": 307760690000.0,
+      "denominator_billion": 3077.6069,
+      "maintenance_rate": 1.7257958257436972,
+      "maintenance_rate_pct": 172.5795825743697,
+      "elapsed_ms": 4671,
+      "details": {
+        "processed": 1146,
+        "skipped": 1,
+        "skipped_examples": [
+          {
+            "code": "8422",
+            "reason": "note_exclamation",
+            "note": "!"
+          }
+        ]
+      },
+      "csv_path": "D:\\TW_stock_detect\\scrapers\\..\\results\\maintenance_calc_formula.csv",
+      "top_csv_path": "D:\\TW_stock_detect\\scrapers\\..\\results\\top_contributors.csv"
+    }
+  },
+  "meta": {
+    "status": "ok",
+    "elapsed_ms": 4671,
+    "details": {
+      "processed": 1146,
+      "skipped": 1,
+      "skipped_examples": [
+        {
+          "code": "8422",
+          "reason": "note_exclamation",
+          "note": "!"
+        }
+      ]
+    }
+  }
+}

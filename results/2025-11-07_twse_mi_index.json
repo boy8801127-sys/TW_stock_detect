@@ -1,0 +1,14 @@
+{
+  "timestamp": 1762475338,
+  "source": "https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX",
+  "data": {
+    "mi_index_close": {
+      "raw": "27899",
+      "value": 27899
+    }
+  },
+  "meta": {
+    "status": "ok",
+    "elapsed_ms": 722
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "timestamp": 1762389970,
+  "source": "https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?response=json&_=1762389970139",
+  "data": {
+    "financing": {
+      "previous": 7435535,
+      "today": 7441116
+    },
+    "shorting": {
+      "previous": 301739,
+      "today": 303225
+    },
+    "ratio": {
+      "previous": 0.04058067106132914,
+      "today": 0.04074993589671227,
+      "delta": 0.0001692648353831261,
+      "pct_change": 0.004171070387853319
+    }
+  },
+  "meta": {
+    "status": "ok",
+    "elapsed_ms": 550
+  }
+}

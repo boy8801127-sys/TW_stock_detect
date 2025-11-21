@@ -1,0 +1,8 @@
+requests>=2.28
+pandas>=1.5
+pandas_market_calendars>=5.0
+yfinance>=0.2
+playwright>=1.55
+python-dateutil
+pytz
+lxml>=4.9.0

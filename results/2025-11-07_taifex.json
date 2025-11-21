@@ -1,0 +1,28 @@
+{
+  "timestamp": 1762475340,
+  "source": "https://www.taifex.com.tw/cht/3/futContractsDateExcel",
+  "symbol": "臺股期貨",
+  "data": {
+    "foreign": {
+      "current": -29917,
+      "raw": "-29,917"
+    },
+    "dealer": {
+      "current": 398,
+      "raw": "398"
+    },
+    "inv_trust": {
+      "current": 21173,
+      "raw": "21,173"
+    }
+  },
+  "meta": {
+    "status": "ok",
+    "elapsed_ms": 832,
+    "raw": {
+      "foreign_raw": "-29,917",
+      "dealer_raw": "398",
+      "inv_raw": "21,173"
+    }
+  }
+}

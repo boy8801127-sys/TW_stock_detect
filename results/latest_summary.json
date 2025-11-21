@@ -1,0 +1,144 @@
+{
+  "generated_at": "2025-11-08T11:12:40.570635+08:00",
+  "scrapers": {
+    "twse_margin_api": {
+      "ok": true,
+      "source": "https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?response=json&_=1762571552606",
+      "meta": {
+        "status": "ok",
+        "elapsed_ms": null
+      },
+      "data": {
+        "financing": {
+          "previous": 7509170,
+          "today": 7522074
+        },
+        "shorting": {
+          "previous": 312191,
+          "today": 308212
+        },
+        "ratio": {
+          "previous": 0.041574634746583176,
+          "today": 0.0409743376627244,
+          "delta": -0.0006002970838587737,
+          "pct_change": -0.014439022435623667
+        }
+      }
+    },
+    "twse_mi_index": {
+      "ok": true,
+      "source": "https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX",
+      "meta": {
+        "status": "ok",
+        "elapsed_ms": 730
+      },
+      "data": {
+        "mi_index_close": {
+          "raw": "27651",
+          "value": 27651
+        }
+      }
+    },
+    "VIXTWN": {
+      "ok": true,
+      "source": "https://mis.taifex.com.tw/futures/api/getQuoteListVIX",
+      "meta": {
+        "status": "ok",
+        "elapsed_ms": 792
+      },
+      "data": {
+        "vix": {
+          "raw": "28.16",
+          "value": 28.16
+        }
+      }
+    },
+    "taifex_futures": {
+      "ok": true,
+      "source": "https://www.taifex.com.tw/cht/3/futContractsDateExcel",
+      "meta": {
+        "status": "ok",
+        "elapsed_ms": null,
+        "raw": {
+          "foreign_raw": "-30,820",
+          "dealer_raw": "1,512",
+          "inv_raw": "20,839"
+        }
+      },
+      "data": {
+        "foreign": {
+          "current": -30820
+        },
+        "dealer": {
+          "current": 1512
+        },
+        "inv_trust": {
+          "current": 20839
+        }
+      }
+    },
+    "maintenance_calc": {
+      "ok": true,
+      "source": "https://openapi.twse.com.tw/v1/exchangeReport/MI_MARGN",
+      "meta": {
+        "status": "ok",
+        "elapsed_ms": 4671,
+        "details": {
+          "processed": 1146,
+          "skipped": 1,
+          "skipped_examples": [
+            {
+              "code": "8422",
+              "reason": "note_exclamation",
+              "note": "!"
+            }
+          ]
+        }
+      },
+      "data": {
+        "maintenance_calc": {
+          "ok": true,
+          "numerator": 531132114130.0,
+          "numerator_billion": 5311.3211413,
+          "denominator": 307760690000.0,
+          "denominator_billion": 3077.6069,
+          "maintenance_rate": 1.7257958257436972,
+          "maintenance_rate_pct": 172.5795825743697,
+          "elapsed_ms": 4671,
+          "details": {
+            "processed": 1146,
+            "skipped": 1,
+            "skipped_examples": [
+              {
+                "code": "8422",
+                "reason": "note_exclamation",
+                "note": "!"
+              }
+            ]
+          },
+          "csv_path": "D:\\TW_stock_detect\\scrapers\\..\\results\\maintenance_calc_formula.csv",
+          "top_csv_path": "D:\\TW_stock_detect\\scrapers\\..\\results\\top_contributors.csv"
+        }
+      }
+    }
+  },
+  "skipped": [
+    {
+      "name": "compose_notification",
+      "reason": "no fetch()"
+    },
+    {
+      "name": "tg_send",
+      "reason": "no fetch()"
+    },
+    {
+      "name": "trading_day",
+      "reason": "no fetch()"
+    },
+    {
+      "name": "utils",
+      "reason": "no fetch()"
+    }
+  ],
+  "overall_status": "ok"
+}

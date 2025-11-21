@@ -1,0 +1,24 @@
+{
+  "timestamp": 1762388092,
+  "source": "https://www.macromicro.me/charts/53117/taiwan-taiex-maintenance-margin",
+  "data": {
+    "maintenance_today": {
+      "raw": "162.30",
+      "value": 162.3
+    },
+    "maintenance_previous": {
+      "raw": "163.19",
+      "value": 163.19
+    },
+    "delta": -0.8899999999999864,
+    "pct_change": -0.005453765549359559
+  },
+  "meta": {
+    "status": "ok_playwright",
+    "elapsed_ms": 65455,
+    "raw_debug": {
+      "today_raw": "162.30",
+      "prev_raw": "163.19"
+    }
+  }
+}

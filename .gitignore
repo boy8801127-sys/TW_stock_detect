@@ -179,3 +179,24 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Results and data files
+results/
+*.json
+*.csv
+*.html
+*.txt
+!requirements.txt
+!Changelog.txt
+
+# Test files
+macromicro_api_response.html
+taifex_vix_playwright_response.json
+taifex_vix_preview.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kubernetes/Cloud Run configs with sensitive info
+tw-stock-job.yaml

@@ -48,7 +48,7 @@ RUN mkdir -p /app/results && chmod -R 0777 /app/results
 
 # Optional: install Playwright browsers if your scrapers actually use Playwright.
 # This step can be slow and increases image size. Enable only if needed.
-ARG INSTALL_PLAYWRIGHT="false"
+ARG INSTALL_PLAYWRIGHT="true"
 RUN if [ "$INSTALL_PLAYWRIGHT" = "true" ] ; then \
       python -m playwright install --with-deps ; \
     else \

@@ -39,10 +39,15 @@ SKIP_TRADING_DAY_CHECK = os.getenv("SKIP_TRADING_DAY_CHECK", "false").lower() in
 DEFAULT_ORDER = [
     "twse_margin_api",
     "twse_mi_index",
+    "cmoney_futures_night",
     "VIXTWN",
     "taifex_futures",
-    "maintenance_calc"
+    "cmoney_margin"
 ]
+
+# Scrapers kept in the repo for manual use (ORDERED_SCRAPERS) but not run by
+# default via auto-discovery, since they've been superseded by another module.
+EXCLUDED_FROM_AUTODISCOVERY = {"maintenance_calc"}
 
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
@@ -94,7 +99,7 @@ def resolve_run_list():
             if not fn.endswith(".py"):
                 continue
             name = fn[:-3]
-            if name in names or name.startswith("__"):
+            if name in names or name.startswith("__") or name in EXCLUDED_FROM_AUTODISCOVERY:
                 continue
             # Append by filename; actual import occurs later in run_single_scraper
             names.append(name)
@@ -311,6 +316,12 @@ def main():
     # check trading day first (may exit)
     _check_trading_day_or_exit()
 
+    try:
+        from scrapers.gcs_sync import download_results
+        download_results()
+    except Exception:
+        log(f"gcs_sync.download_results failed: {traceback.format_exc()}", "WARNING")
+
     run_list = resolve_run_list()
     results, skipped = run_scrapers_in_order(run_list)
     summary = aggregate_results(results, skipped)
@@ -319,6 +330,12 @@ def main():
     sent_ok, reason = build_and_optionally_send(summary)
     if not sent_ok:
         log(f"Notification/send step issue: {reason}", "WARNING")
+
+    try:
+        from scrapers.gcs_sync import upload_results
+        upload_results()
+    except Exception:
+        log(f"gcs_sync.upload_results failed: {traceback.format_exc()}", "WARNING")
 
     ok_count = sum(1 for _, ok, _ in results if ok)
     total = len(results)

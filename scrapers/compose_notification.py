@@ -1,72 +1,62 @@
 # scrapers/compose_notification.py
 import os
+import re
+import glob
 import json
-import math
 from datetime import datetime, timezone
 
-# primary summary path (existing pipeline)
-SUMMARY_PATH = os.path.join(os.path.dirname(__file__), "..", "results", "latest_summary.json")
-# fallback to maintenance calc summary if primary not present
-MAINT_PATH = os.path.join(os.path.dirname(__file__), "..", "results", "latest_maintenance_calc.json")
+RESULTS_DIR = os.path.join(os.path.dirname(__file__), "..", "results")
+SUMMARY_PATH = os.path.join(RESULTS_DIR, "latest_summary.json")
+MAINT_PATH = os.path.join(RESULTS_DIR, "latest_maintenance_calc.json")
+
+WEEKDAY_CN = ["一", "二", "三", "四", "五", "六", "日"]
+
 
 def _fmt_number(v, decimals=None):
     if v is None:
         return "-"
     try:
-        if isinstance(v, str):
-            vv = float(str(v).replace(",", ""))
-        else:
-            vv = float(v)
+        vv = float(str(v).replace(",", "")) if isinstance(v, str) else float(v)
     except Exception:
         return str(v)
     if decimals is None:
         if abs(vv - int(vv)) < 1e-8:
             return f"{int(vv):,}"
         return f"{vv:,}"
-    else:
-        fmt = f"{{:,.{decimals}f}}"
-        s = fmt.format(vv)
-        if "." in s:
-            s = s.rstrip("0").rstrip(".")
-        return s
+    fmt = f"{{:,.{decimals}f}}"
+    s = fmt.format(vv)
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s
 
-def _fmt_percent_value(v, ndigits=2):
-    try:
-        val = float(v)
-    except Exception:
-        return "-"
-    return f"{val:.{ndigits}f}%"
 
-def _fmt_pct(value):
-    try:
-        v = float(value)
-    except Exception:
+def _fmt_signed(v, decimals=0):
+    if v is None:
         return "-"
-    return f"{v*100:+.2f}%"
+    try:
+        vv = float(v)
+    except Exception:
+        return str(v)
+    fmt = f"{{:+,.{decimals}f}}"
+    s = fmt.format(vv)
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+        if s.endswith(("+", "-")):
+            s += "0"
+    return s
+
 
 def _sign_symbol(delta):
     try:
         d = float(delta)
     except Exception:
-        return ""
+        return "→"
     if d > 0:
         return "▲"
     if d < 0:
         return "▼"
     return "→"
 
-def _vix_interpret(v):
-    try:
-        v = float(v)
-    except Exception:
-        return ""
-    if v < 15:
-        return "情緒平穩，波動預期低"
-    if 15 <= v < 20:
-        return "略有不安，波動溫和"
-    if 20 <= v < 30:
-        return "情緒警惕，波動增加"
-    return "市場恐慌，波動性極高"
 
 def _load_json_try(path):
     try:
@@ -75,224 +65,216 @@ def _load_json_try(path):
     except Exception:
         return None
 
+
+def _find_previous_value(prefix, today_str, extractor):
+    """Read the most recent {date}_{prefix}.json archive strictly before today_str
+    and run extractor(json_obj) -> value. Returns None if nothing usable is found.
+    """
+    rx = re.compile(r"^(\d{4}-\d{2}-\d{2})_" + re.escape(prefix) + r"\.json$")
+    dates = []
+    try:
+        for fp in glob.glob(os.path.join(RESULTS_DIR, f"*_{prefix}.json")):
+            m = rx.match(os.path.basename(fp))
+            if m and m.group(1) < today_str:
+                dates.append(m.group(1))
+    except Exception:
+        return None
+    if not dates:
+        return None
+    dates.sort()
+    j = _load_json_try(os.path.join(RESULTS_DIR, f"{dates[-1]}_{prefix}.json"))
+    if not j:
+        return None
+    try:
+        return extractor(j)
+    except Exception:
+        return None
+
+
+def _vix_interpret_by_change(pct_change):
+    if pct_change is None:
+        return "情緒平穩（無前日資料可比較）"
+    if pct_change > 20:
+        return "市場恐慌情緒急升"
+    if pct_change > 5:
+        return "情緒升溫，市場不安感增加"
+    if pct_change >= -5:
+        return "情緒平穩"
+    if pct_change >= -20:
+        return "情緒回落，波動趨緩"
+    return "市場恐慌情緒明顯消退"
+
+
+def _maintenance_level(rate):
+    if rate is None:
+        return "", ""
+    if rate >= 180:
+        return "🟢", "過高，融資空間充裕"
+    if rate >= 150:
+        return "🟡", "中等，正常水位"
+    if rate >= 130:
+        return "🟠", "偏低，需留意"
+    return "🔴", "危險，接近追繳水位"
+
+
 def build_message(summary):
-    gen = summary.get("generated_at") or datetime.now(timezone.utc).astimezone().isoformat()
-    lines = []
-    header = f"📊 今日大盤指標彙整  {gen}\n"
-    lines.append(header)
+    gen = summary.get("generated_at")
+    try:
+        dt = datetime.fromisoformat(gen) if gen else datetime.now(timezone.utc).astimezone()
+    except Exception:
+        dt = datetime.now(timezone.utc).astimezone()
+    today_str = dt.strftime("%Y-%m-%d")
+    weekday = WEEKDAY_CN[dt.weekday()]
 
     scrapers = summary.get("scrapers", {})
+    sections = []
 
-    # 1) 發行量加權股價指數 (收盤) — 放首位
+    # ── 大盤指數 ──────────────────────────────
+    idx_lines = []
     if "twse_mi_index" in scrapers:
-        info = scrapers["twse_mi_index"]
-        v = info.get("data", {}).get("mi_index_close", {})
-        val = v.get("value") or v.get("raw")
-        lines.append(f"• 發行量加權股價指數 (收盤): {_fmt_number(val, 0)}")
+        v = scrapers["twse_mi_index"].get("data", {}).get("mi_index_close", {})
+        val = v.get("value")
+        if val is not None:
+            prev = _find_previous_value(
+                "twse_mi_index", today_str,
+                lambda j: j.get("data", {}).get("mi_index_close", {}).get("value"),
+            )
+            delta = (val - prev) if prev is not None else None
+            pct = (delta / prev * 100) if (delta is not None and prev) else None
+            sym = _sign_symbol(delta)
+            extra = f"  {sym} {_fmt_signed(delta)} ({_fmt_signed(pct, 2)}%)" if delta is not None else ""
+            idx_lines.append(f"📈 加權指數：{_fmt_number(val, 0)}{extra}")
 
-    # 2) 券資比 (TWSE)
+    if "cmoney_futures_night" in scrapers:
+        nf = scrapers["cmoney_futures_night"].get("data", {}).get("night_futures", {})
+        val = nf.get("index")
+        if val is not None:
+            change = nf.get("change")
+            pct = nf.get("pct_change")
+            sym = _sign_symbol(change)
+            extra = f"  {sym} {_fmt_signed(change)} ({_fmt_signed(pct, 2)}%)" if change is not None else ""
+            idx_lines.append(f"🌙 台指期夜盤：{_fmt_number(val, 0)}{extra}")
+
+    if idx_lines:
+        sections.append("━━━━━━ 大盤指數 ━━━━━━\n" + "\n".join(idx_lines))
+
+    # ── 市場情緒 (VIX) ────────────────────────
+    if "VIXTWN" in scrapers:
+        v = scrapers["VIXTWN"].get("data", {}).get("vix", {})
+        val = v.get("value")
+        if val is not None:
+            prev = _find_previous_value(
+                "taifex_vix", today_str,
+                lambda j: j.get("data", {}).get("vix", {}).get("value"),
+            )
+            delta = (val - prev) if prev is not None else None
+            pct = (delta / prev * 100) if (delta is not None and prev) else None
+            sym = _sign_symbol(delta)
+            extra = f"  {sym} {_fmt_signed(delta, 1)}（{_fmt_signed(pct, 1)}%）" if delta is not None else ""
+            interp = _vix_interpret_by_change(pct)
+            sections.append(
+                "━━━━━━ 市場情緒 ━━━━━━\n"
+                f"🌡 VIX：{_fmt_number(val, 2)}{extra}\n"
+                f"   {interp}"
+            )
+
+    # ── 券資比 ────────────────────────────────
     if "twse_margin_api" in scrapers:
-        info = scrapers["twse_margin_api"]
-        ratio = info.get("data", {}).get("ratio", {})
+        ratio = scrapers["twse_margin_api"].get("data", {}).get("ratio", {})
         today = ratio.get("today")
         delta = ratio.get("delta")
-        prev = ratio.get("previous")
         if today is not None:
-            pct_str = _fmt_pct(today)
             sym = _sign_symbol(delta or 0)
-            delta_pct = ""
-            try:
-                if delta is not None:
-                    delta_pct = f"{(float(delta))*100:+.2f}pt"
-            except Exception:
-                delta_pct = ""
-            rel_pct = ""
-            try:
-                if prev is not None and delta is not None and float(prev) != 0:
-                    rel_pct = f"{(float(delta)/abs(float(prev))*100):.2f}%"
-                    rel_pct = f"+{rel_pct}" if float(delta) > 0 else rel_pct
-            except Exception:
-                rel_pct = ""
-            extras = []
-            if delta_pct:
-                extras.append(delta_pct)
-            if rel_pct:
-                extras.append(rel_pct)
-            extras_text = ", ".join(extras) if extras else "-"
-            lines.append(f"• 券資比 (TWSE): {pct_str} {sym} ({extras_text})")
+            pt_str = f"{delta * 100:+.2f}pt" if delta is not None else "-"
+            sections.append(
+                "━━━━━━ 券資比 ━━━━━━\n"
+                f"⚖️ 券資比：{today * 100:.2f}%  {sym} ({pt_str})"
+            )
 
-    # 3) VIX
-    if "VIXTWN" in scrapers:
-        info = scrapers["VIXTWN"]
-        v = info.get("data", {}).get("vix", {})
-        val = v.get("value") or v.get("raw")
-        if val is not None:
-            vstr = _fmt_number(val, 2)
-            interp = _vix_interpret(val)
-            lines.append(f"• 臺指選擇權波動率 (VIX): {vstr}  — {interp}")
-
-    # 4) 臺股期貨未平倉口數
+    # ── 期貨未平倉口數 ────────────────────────
     if "taifex_futures" in scrapers:
-        info = scrapers["taifex_futures"]
-        data = info.get("data", {})
-        foreign = data.get("foreign") or {}
-        dealer = data.get("dealer") or {}
-        inv = data.get("inv_trust") or data.get("inv") or {}
-        def pick(item):
-            if not item:
-                return None, None
-            if isinstance(item, dict):
-                cur = item.get("current")
-                raw = item.get("raw")
-                return cur, raw
-            return item, item
-        f_cur, f_raw = pick(foreign)
-        d_cur, d_raw = pick(dealer)
-        i_cur, i_raw = pick(inv)
-        lines.append("• 臺股期貨未平倉口數:")
-        def need_raw_display(cur, raw):
-            if cur is None or raw is None:
-                return False
-            try:
-                cur_s = str(int(cur))
-            except Exception:
-                try:
-                    cur_s = str(float(cur))
-                except Exception:
-                    cur_s = str(cur)
-            raw_s = str(raw).replace(",", "").replace(" ", "")
-            return raw_s != cur_s and raw_s != f"+{cur_s}" and raw_s != f"-{cur_s}"
-        lines.append(f"  - 外資未平倉: {_fmt_number(f_cur,0)}" + (f"  (原始: {f_raw})" if need_raw_display(f_cur, f_raw) else ""))
-        lines.append(f"  - 自營商未平倉: {_fmt_number(d_cur,0)}" + (f"  (原始: {d_raw})" if need_raw_display(d_cur, d_raw) else ""))
-        lines.append(f"  - 投信未平倉: {_fmt_number(i_cur,0)}" + (f"  (原始: {i_raw})" if need_raw_display(i_cur, i_raw) else ""))
+        data = scrapers["taifex_futures"].get("data", {})
 
-    # 5) 取出 maintenance_calc 或 cmoney_margin 提供的大盤融資相關值
-    # 首先，嘗試在 summary['scrapers'] 裡找 maintenance_calc
-    numerator = None
-    maintenance_rate = None
+        def cur(key):
+            item = data.get(key) or {}
+            return item.get("current") if isinstance(item, dict) else item
 
-    # helper to extract from nested dicts with multiple possible shapes
-    def extract_from_obj(obj):
-        if not obj:
-            return None, None
-        # possible shapes:
-        # 1) obj is {"data": {"maintenance_calc": {...}}}
-        # 2) obj is {"data": {...}} where data has numerator directly
-        # 3) obj is the inner dict itself
-        try:
-            if isinstance(obj, dict):
-                # case 1
-                d = obj.get("data") or obj
-                if isinstance(d, dict) and "maintenance_calc" in d and isinstance(d["maintenance_calc"], dict):
-                    inner = d["maintenance_calc"]
-                    return inner.get("numerator"), inner.get("maintenance_rate") or inner.get("maintenance_rate_pct")
-                # case 2
-                if isinstance(d, dict):
-                    if "numerator" in d or "maintenance_rate" in d or "maintenance_rate_pct" in d:
-                        return d.get("numerator"), d.get("maintenance_rate") or d.get("maintenance_rate_pct")
-                # case 3: maybe obj itself has numerator
-                if "numerator" in obj or "maintenance_rate" in obj or "maintenance_rate_pct" in obj:
-                    return obj.get("numerator"), obj.get("maintenance_rate") or obj.get("maintenance_rate_pct")
-        except Exception:
-            pass
-        return None, None
+        fut_lines = []
+        for label, key in (("外資", "foreign"), ("自營", "dealer"), ("投信", "inv_trust")):
+            val = cur(key)
+            if val is None:
+                continue
+            prev = _find_previous_value(
+                "taifex", today_str,
+                lambda j, k=key: (j.get("data", {}).get(k) or {}).get("current"),
+            )
+            delta = (val - prev) if prev is not None else None
+            sym = _sign_symbol(delta)
+            delta_str = f"  {sym} {_fmt_signed(delta)}" if delta is not None else f"  {sym}"
+            fut_lines.append(f"{label} {_fmt_number(val, 0):>7}{delta_str}")
+        if fut_lines:
+            sections.append("━━━━━━ 期貨未平倉口數 ━━━━━━\n" + "\n".join(fut_lines))
 
-    # try scrapers dict first
-    if "maintenance_calc" in scrapers:
-        numerator, maintenance_rate = extract_from_obj(scrapers.get("maintenance_calc"))
-    if numerator is None and "cmoney_margin" in scrapers:
-        numerator, maintenance_rate = extract_from_obj(scrapers.get("cmoney_margin"))
-    # fallback: try summary top-level in case the structure is different
-    if numerator is None or maintenance_rate is None:
-        # try scanning all scrapers for candidates
-        for nm, obj in scrapers.items():
-            if numerator is None or maintenance_rate is None:
-                n, m = extract_from_obj(obj)
-                if n is not None:
-                    numerator = numerator or n
-                if m is not None:
-                    maintenance_rate = maintenance_rate or m
+    # ── 融資融券 (CMoney) ─────────────────────
+    if "cmoney_margin" in scrapers:
+        data = scrapers["cmoney_margin"].get("data", {})
+        margin = data.get("margin", {})
+        short = data.get("short", {})
+        margin_lines = []
 
-    # if still None, try loading latest_maintenance_calc.json directly
-    if numerator is None:
-        j = _load_json_try(MAINT_PATH)
-        if j:
-            # expect j['data']['maintenance_calc']
-            try:
-                mc = j.get("data", {}).get("maintenance_calc", {}) or j.get("data") or j.get("maintenance_calc") or {}
-                numerator = mc.get("numerator") or mc.get("numerator_billion")
-                maintenance_rate = mc.get("maintenance_rate") or mc.get("maintenance_rate_pct")
-            except Exception:
-                numerator = None
-                maintenance_rate = None
+        bal = margin.get("balance_billion")
+        if bal is not None:
+            chg = margin.get("change_billion")
+            sym = _sign_symbol(chg)
+            chg_str = f"  {sym} {_fmt_signed(chg, 0)}億" if chg is not None else ""
+            margin_lines.append(f"💰 融資餘額：{_fmt_number(bal, 0)}億{chg_str}")
 
-    # Format and display if available
-    if numerator is not None:
-        try:
-            num_val = float(numerator)
-            if num_val < 1_000_000:  # likely already in 億 (e.g., 5402)
-                num_in_billion = num_val
-            else:
-                num_in_billion = num_val / 100000000.0
-            num_display = f"{num_in_billion:.0f}"
-        except Exception:
-            num_display = str(numerator)
-        lines.append(f"• 所有融資上市股票市值: {num_display} 億")
+            usage = margin.get("usage_rate")
+            maint = margin.get("maintenance_rate")
+            parts = []
+            if usage is not None:
+                parts.append(f"使用率 {usage:.2f}%")
+            if maint is not None:
+                emoji, label = _maintenance_level(maint)
+                parts.append(f"維持率 {maint:.1f}%  {emoji} {label}")
+            if parts:
+                margin_lines.append("   " + "  ".join(parts))
 
-    if maintenance_rate is not None:
-        try:
-            mr = float(maintenance_rate)
-            if mr > 1.5:
-                mr_pct = mr if mr > 10 else mr * 100
-            elif mr > 1:
-                mr_pct = mr * 100
-            else:
-                mr_pct = mr * 100
-            mr_display = f"{mr_pct:.2f}%"
-        except Exception:
-            mr_display = str(maintenance_rate)
-        lines.append(f"• 大盤融資維持率: {mr_display}")
+        short_bal = short.get("balance_lots")
+        if short_bal is not None:
+            chg = short.get("change_lots")
+            sym = _sign_symbol(chg)
+            chg_str = f"  {sym} {_fmt_signed(chg, 0)}張" if chg is not None else ""
+            margin_lines.append(f"\n🔻 融券餘額：{_fmt_number(short_bal, 0)}張{chg_str}")
+            usage = short.get("usage_rate")
+            if usage is not None:
+                margin_lines.append(f"   使用率 {usage:.2f}%")
 
-    # other scrapers: fallback brief display
-    special = {"twse_mi_index", "twse_margin_api", "VIXTWN", "taifex_futures", "cmoney_margin", "maintenance_calc"}
-    for name, info in scrapers.items():
-        if name in special:
-            continue
-        data = info.get("data", {})
-        display = None
-        for k in ("vix", "maintenance_rate", "mi_index_close", "ratio"):
-            if k in data:
-                val = data[k].get("value") if isinstance(data[k], dict) else data[k]
-                display = f"{k}: {_fmt_number(val)}"
-                break
-        if not display and isinstance(data, dict):
-            for k2, v2 in data.items():
-                if isinstance(v2, dict) and ("value" in v2 or "current" in v2):
-                    val = v2.get("value") or v2.get("current") or v2.get("raw")
-                    display = f"{k2}: {_fmt_number(val)}"
-                    break
-        if display:
-            lines.append(f"• {name}: {display}")
+        if margin_lines:
+            sections.append("━━━━━━ 融資融券 ━━━━━━\n" + "\n".join(margin_lines))
 
-    message = "\n".join(lines)
-    return message
+    header = f"📊 台股早盤指標 — {today_str}（{weekday}）"
+    body = "\n\n".join(sections)
+    footer = "━━━━━━━━━━━━━━━━━━━━"
+    return f"{header}\n\n{body}\n\n{footer}" if body else header
+
 
 def load_summary(path=SUMMARY_PATH):
-    # try primary path then fallback to maintenance calc path
     j = _load_json_try(path)
     if j:
         return j
     j2 = _load_json_try(MAINT_PATH)
     if j2:
-        # wrap maintenance calc into summary-shaped dict for backward compatibility
-        return {"generated_at": j2.get("timestamp") or None, "scrapers": {"maintenance_calc": j2.get("data", {}).get("maintenance_calc", j2.get("data", {}))}}
+        return {"generated_at": None, "scrapers": {"maintenance_calc": j2.get("data", {}).get("maintenance_calc", j2.get("data", {}))}}
     raise FileNotFoundError(f"Neither {path} nor {MAINT_PATH} found")
+
 
 def main():
     summary = load_summary()
     msg = build_message(summary)
     print(msg)
     return msg
+
 
 if __name__ == "__main__":
     main()

@@ -200,3 +200,6 @@ Thumbs.db
 
 # Kubernetes/Cloud Run configs with sensitive info
 tw-stock-job.yaml
+
+# Claude Code project hooks/settings (no secrets, safe to version control)
+!.claude/settings.json

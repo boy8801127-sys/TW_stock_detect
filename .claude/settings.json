@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py .claude/hooks/check_secrets.py",
+            "if": "Bash(git *)"
+          },
+          {
+            "type": "command",
+            "command": "py .claude/hooks/check_destructive.py"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "..", "results")
 SUMMARY_PATH = os.path.join(RESULTS_DIR, "latest_summary.json")
 MAINT_PATH = os.path.join(RESULTS_DIR, "latest_maintenance_calc.json")
+VIX_CACHE_PATH = os.path.join(RESULTS_DIR, "latest_taifex_vix.json")
 
 WEEKDAY_CN = ["一", "二", "三", "四", "五", "六", "日"]
 
@@ -105,6 +106,16 @@ def _vix_interpret_by_change(pct_change):
     return "市場恐慌情緒明顯消退"
 
 
+def _fear_greed_emoji(rating):
+    return {
+        "極度恐懼": "😱",
+        "恐懼": "😨",
+        "中性": "😐",
+        "貪婪": "😏",
+        "極度貪婪": "🤑",
+    }.get(rating, "😐")
+
+
 def _maintenance_level(rate):
     if rate is None:
         return "", ""
@@ -117,7 +128,7 @@ def _maintenance_level(rate):
     return "🔴", "危險，接近追繳水位"
 
 
-def build_message(summary):
+def build_message(summary, ai_text=None):
     gen = summary.get("generated_at")
     try:
         dt = datetime.fromisoformat(gen) if gen else datetime.now(timezone.utc).astimezone()
@@ -152,30 +163,67 @@ def build_message(summary):
             change = nf.get("change")
             pct = nf.get("pct_change")
             sym = _sign_symbol(change)
-            extra = f"  {sym} {_fmt_signed(change)} ({_fmt_signed(pct, 2)}%)" if change is not None else ""
+            extra = f"  {sym} {_fmt_signed(change)}（較前一日收盤 {_fmt_signed(pct, 2)}%）" if change is not None else ""
             idx_lines.append(f"🌙 台指期夜盤：{_fmt_number(val, 0)}{extra}")
 
     if idx_lines:
         sections.append("━━━━━━ 大盤指數 ━━━━━━\n" + "\n".join(idx_lines))
 
     # ── 市場情緒 (VIX) ────────────────────────
-    if "VIXTWN" in scrapers:
-        v = scrapers["VIXTWN"].get("data", {}).get("vix", {})
-        val = v.get("value")
-        if val is not None:
-            prev = _find_previous_value(
-                "taifex_vix", today_str,
-                lambda j: j.get("data", {}).get("vix", {}).get("value"),
-            )
-            delta = (val - prev) if prev is not None else None
-            pct = (delta / prev * 100) if (delta is not None and prev) else None
-            sym = _sign_symbol(delta)
-            extra = f"  {sym} {_fmt_signed(delta, 1)}（{_fmt_signed(pct, 1)}%）" if delta is not None else ""
-            interp = _vix_interpret_by_change(pct)
+    vix_entry = scrapers.get("VIXTWN") or {}
+    val = None
+    from_cache = False
+    if vix_entry.get("ok"):
+        val = vix_entry.get("data", {}).get("vix", {}).get("value")
+    if val is None or val <= 0:
+        cached = _load_json_try(VIX_CACHE_PATH)
+        if cached:
+            cached_val = cached.get("data", {}).get("vix", {}).get("value")
+            if cached_val is not None and cached_val > 0:
+                val = cached_val
+                from_cache = True
+    if val is not None:
+        prev = _find_previous_value(
+            "taifex_vix", today_str,
+            lambda j: j.get("data", {}).get("vix", {}).get("value"),
+        )
+        delta = (val - prev) if prev is not None else None
+        pct = (delta / prev * 100) if (delta is not None and prev) else None
+        sym = _sign_symbol(delta)
+        extra = f"  {sym} {_fmt_signed(delta, 1)}（{_fmt_signed(pct, 1)}%）" if delta is not None else ""
+        interp = _vix_interpret_by_change(pct)
+        cache_note = "（快取）" if from_cache else ""
+        sections.append(
+            "━━━━━━ 市場情緒 ━━━━━━\n"
+            f"🌡 VIX：{_fmt_number(val, 2)}{cache_note}{extra}\n"
+            f"   {interp}"
+        )
+
+    # ── 美股恐懼貪婪指數 ──────────────────────
+    if "cnn_fear_greed" in scrapers:
+        fg = scrapers["cnn_fear_greed"].get("data", {})
+        score = fg.get("score")
+        if score is not None:
+            rating = fg.get("rating")
+            emoji = _fear_greed_emoji(rating)
             sections.append(
-                "━━━━━━ 市場情緒 ━━━━━━\n"
-                f"🌡 VIX：{_fmt_number(val, 2)}{extra}\n"
-                f"   {interp}"
+                "━━━━━━ 美股恐懼貪婪指數 ━━━━━━\n"
+                f"{emoji} 恐懼貪婪指數：{_fmt_number(score, 0)}（{rating}）"
+            )
+
+    # ── 台積電 ADR ────────────────────────────
+    if "tsm_adr_compare" in scrapers:
+        adr = scrapers["tsm_adr_compare"].get("data", {})
+        implied = adr.get("implied_twd_price")
+        twse_close = adr.get("twse_close")
+        premium = adr.get("premium_pct")
+        if implied is not None and twse_close is not None:
+            sym = _sign_symbol(premium)
+            label = "溢價" if (premium or 0) >= 0 else "折價"
+            sections.append(
+                "━━━━━━ 台積電 ADR ━━━━━━\n"
+                f"🇺🇸 ADR 隱含台股價：{_fmt_number(implied, 0)}（換算匯率 {_fmt_number(adr.get('usdtwd'), 2)}）\n"
+                f"   {sym} 較台股收盤 {_fmt_number(twse_close, 0)} {label} {abs(premium):.2f}%"
             )
 
     # ── 券資比 ────────────────────────────────
@@ -254,6 +302,8 @@ def build_message(summary):
             sections.append("━━━━━━ 融資融券 ━━━━━━\n" + "\n".join(margin_lines))
 
     header = f"📊 台股早盤指標 — {today_str}（{weekday}）"
+    if ai_text:
+        header += f"\n\n🤖 AI 簡評：{ai_text}"
     body = "\n\n".join(sections)
     footer = "━━━━━━━━━━━━━━━━━━━━"
     return f"{header}\n\n{body}\n\n{footer}" if body else header

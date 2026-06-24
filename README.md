@@ -5,7 +5,8 @@
 ## 功能特色
 
 - 📊 **自動化數據收集**：每日自動爬取多個數據源
-- 🔄 **多指標彙整**：整合大盤指數、台指期夜盤、VIX、券資比、期貨未平倉、融資融券等指標
+- 🔄 **多指標彙整**：整合大盤指數、台指期夜盤、VIX、美股恐懼貪婪指數、台積電 ADR 比較、券資比、期貨未平倉、融資融券等指標
+- 🤖 **AI 簡評**：呼叫 Claude API，針對當日數據自動生成一段約 50 字的三句式中文簡評
 - 📱 **Telegram 推播**：分區視覺化格式，附燈號與變化幅度判讀，開盤前一次看完
 - ⏰ **交易日檢查**：僅在交易日執行，避免無效運行
 - 🐳 **Docker 支援**：容器化部署，內建 Playwright 瀏覽器
@@ -55,6 +56,28 @@
 
 **注意事項**：v1.0 版本曾自行計算大盤融資維持率，與券商數值有 1%-2% 誤差；v2.0 改採 CMoney 官方計算數值後已不再需要自行估算，相關舊邏輯（`maintenance_calc.py`）仍保留在程式碼中但預設不執行。
 
+### 6. 美股恐懼貪婪指數（CNN Fear & Greed Index）
+
+**說明**：CNN 編製的美股市場情緒指數（0-100），綜合多項市場技術指標計算，反映美股投資人整體偏向恐懼或貪婪。
+
+**為何可觀察大盤**：美股情緒常透過夜盤、ADR 等管道傳導至台股開盤，極端恐懼或貪婪時常伴隨較大波動。
+
+**資料來源**：CNN 背後資料 API（`production.dataviz.cnn.io`），依分數分為極度恐懼、恐懼、中性、貪婪、極度貪婪五級。
+
+### 7. 台積電 ADR 與台股 2330 隱含溢價/折價
+
+**說明**：以台積電紐約 ADR（TSM，1 ADR：5 股）前一交易日收盤價，換算美元兌台幣匯率後，與台股 2330 前一交易日收盤價比較，得出隱含溢價或折價百分比。
+
+**為何可觀察大盤**：ADR 反映美股交易時段（台股休市時）的台積電股價變動，常被視為台股開盤的領先指標之一，台積電在大盤權重高，對指數影響顯著。
+
+**資料來源**：`yfinance`（`TSM`、`2330.TW`、`TWD=X`）。
+
+### 8. AI 簡評（Claude API）
+
+**說明**：彙整當日夜盤、VIX、美股恐懼貪婪指數、券資比、期貨未平倉、融資融券等關鍵數據，呼叫 Claude API（預設 `claude-haiku-4-5-20251001`）生成一段約 50 字的三句式中文簡評：第一句比較夜盤與前一日收盤、第二句點出最值得注意的異常指標、第三句總結整體偏多/偏空/觀望判斷。
+
+**容錯設計**：未設定 `ANTHROPIC_API_KEY`、API 呼叫失敗或逾時時，直接跳過此區塊，不影響其他指標正常推播。
+
 ## 技術架構
 
 ### 資料來源
@@ -62,6 +85,9 @@
 - **臺灣證券交易所 (TWSE) API、網路爬蟲**：券資比、加權股價指數
 - **臺灣期貨交易所 (TAIFEX) 網路爬蟲**：VIX 指數、期貨未平倉口數
 - **CMoney（透過 Playwright 攔截官方計算 API）**：大盤融資融券（餘額/增減/使用率/維持率）、台指期夜盤指數
+- **CNN（背後資料 API）**：美股恐懼貪婪指數
+- **yfinance**：台積電 ADR（TSM）、台股 2330、USD/TWD 匯率
+- **Claude API（Anthropic）**：AI 簡評文字生成
 
 ### 技術棧
 
@@ -79,6 +105,7 @@
 - **本地執行**：可直接在本地環境運行
 - **Docker 容器**：支援容器化部署，預設安裝 Playwright 瀏覽器
 - **Google Cloud Platform**：支援雲端自動化運行（建議運行時間：每日 08:00，開盤前），並透過 GCS bucket 同步每日存檔，讓 Cloud Run Job 在無持久化磁碟的情況下仍能計算與前一交易日的變化
+- **機密資訊管理**：`TG_BOT_TOKEN`、`TG_CHAT_ID`、`ANTHROPIC_API_KEY` 等機密值皆透過 GCP Secret Manager 儲存，Cloud Run Job 以 `secretKeyRef` 方式讀取並限制只有 `tw-stock-runner` 服務帳戶可存取，不會寫入程式碼、Docker image 或環境變數明文中
 
 ## 為什麼選擇這些指標？
 
@@ -113,14 +140,29 @@ TG_CHAT_ID=your_telegram_chat_id
 # 執行設定（選填）
 AUTO_SEND=true          # 是否自動發送訊息
 DRY_RUN=false           # 是否為測試模式
-ORDERED_SCRAPERS=twse_margin_api,twse_mi_index,cmoney_futures_night,VIXTWN,taifex_futures,cmoney_margin
+ORDERED_SCRAPERS=twse_margin_api,twse_mi_index,cmoney_futures_night,VIXTWN,taifex_futures,cmoney_margin,cnn_fear_greed,tsm_adr_compare
 PARALLEL=false          # 是否並行執行
 MAX_WORKERS=4           # 並行執行時的最大工作數
 RETRY=1                 # 失敗重試次數
 LOG_LEVEL=INFO          # 日誌級別
 SKIP_TRADING_DAY_CHECK=false  # 是否跳過交易日檢查
 RESULTS_GCS_BUCKET=     # （雲端部署用）GCS bucket 名稱，用於同步歷史存檔以計算逐日變化，本地執行可留空
+
+# AI 簡評（選填）
+ANTHROPIC_API_KEY=      # 設定後才會產生 AI 簡評區塊，未設定則自動跳過
+AI_SUMMARY_ENABLED=true # 設為 false 可關閉 AI 簡評
+AI_SUMMARY_MODEL=claude-haiku-4-5-20251001
 ```
+
+### VIX 兩段式排程（避免資料尚未更新導致顯示異常值）
+
+VIX 來源 API 偶爾會在資料尚未更新時回傳無效的 `0`，程式已會自動判定 `<=0` 為錯誤、不覆蓋快取，並在當次抓取失敗時 fallback 使用 `results/latest_taifex_vix.json` 的前次有效值（顯示時會加註「（快取）」）。若要讓快取更新鮮，可額外在 00:00 左右新增一個只跑 VIX、不推播的排程：
+
+```bash
+ORDERED_SCRAPERS=VIXTWN AUTO_SEND=false python main.py
+```
+
+雲端部署時，可在既有 Cloud Run Job 之外，另建一個 Cloud Scheduler 於 00:00（Asia/Taipei）觸發同一個 Job，並覆寫 `ORDERED_SCRAPERS=VIXTWN`、`AUTO_SEND=false`；08:00 的既有排程維持原樣即可。
 
 ### 4. 執行
 
@@ -140,6 +182,9 @@ TW_stock_detect/
 │   ├── VIXTWN.py                 # VIX 指數爬蟲
 │   ├── taifex_futures.py         # 期貨未平倉口數爬蟲
 │   ├── cmoney_margin.py          # 大盤融資融券爬蟲（Playwright）
+│   ├── cnn_fear_greed.py         # 美股恐懼貪婪指數爬蟲
+│   ├── tsm_adr_compare.py        # 台積電 ADR 與台股 2330 比較
+│   ├── ai_summary.py             # AI 簡評（Claude API）
 │   ├── maintenance_calc.py       # 舊版融資維持率自行計算（保留、預設不執行）
 │   ├── gcs_sync.py               # 雲端歷史存檔同步（GCS）
 │   ├── compose_notification.py   # 訊息組裝

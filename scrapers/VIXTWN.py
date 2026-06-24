@@ -172,7 +172,7 @@ def fetch():
             "timestamp": int(time.time()),
             "source": URL,
             "data": {"vix": {"raw": last_raw, "value": last_val}},
-            "meta": {"status": "ok" if last_val is not None else "error", "elapsed_ms": elapsed}
+            "meta": {"status": "ok" if last_val is not None and last_val > 0 else "error", "elapsed_ms": elapsed}
         }
         return result
 
@@ -185,7 +185,7 @@ def fetch():
             "timestamp": int(time.time()),
             "source": URL,
             "data": {"vix": {"raw": last_raw, "value": last_val}},
-            "meta": {"status": "ok" if last_val is not None else "error", "elapsed_ms": elapsed, "note": "fetched_via_playwright"}
+            "meta": {"status": "ok" if last_val is not None and last_val > 0 else "error", "elapsed_ms": elapsed, "note": "fetched_via_playwright"}
         }
         return result
 

@@ -64,3 +64,28 @@
     1.推播時間由每日00:02改為每日08:00（開盤前），資料仍為前一交易日收盤後數據，定位為開盤前提醒。
     2.新增 GCS（Google Cloud Storage）儲存歷史資料：Cloud Run Job 每次執行皆為全新容器、本機磁碟不會保留，故新增雲端儲存桶同步每日存檔，讓"與前一交易日比較"的邏輯在雲端也能正確運作。
     3.Docker image 預設安裝 Playwright 瀏覽器（支援新增的 CMoney 爬蟲）。
+
+臺股開盤前風向提醒機器人 2.1版本更新日誌
+一、本次更新目標
+
+修復 VIX 顯示異常值的問題，並新增美股恐懼貪婪指數、台積電 ADR 比較、AI 簡評三項指標，讓推播更完整、更易判讀。
+
+二、Bug 修復
+
+    1.修復 VIX 顯示 0 的問題:VIXTWN 來源 API 偶爾會回傳無效的「0」佔位值，先前程式碼會將其誤判為合法收盤值並覆蓋快取。現已改為將數值 <=0 視為錯誤、不再覆蓋快取；compose_notification 在當次抓取失敗或缺席時，會自動 fallback 讀取前次有效的快取值，並標註「（快取）」。
+
+三、新增指標
+
+    1.美股恐懼貪婪指數（CNN Fear & Greed Index）:呼叫 CNN 背後的資料 API（production.dataviz.cnn.io），依分數分為極度恐懼、恐懼、中性、貪婪、極度貪婪五級。
+    2.台積電 ADR 與台股 2330 隱含溢價/折價:以 yfinance 取得台積電紐約 ADR（TSM，1 ADR：5 股）與台股 2330 前一交易日收盤價，換算美元兌台幣匯率後比較，得出隱含溢價或折價百分比。
+    3.AI 簡評:彙整當日夜盤、VIX、美股恐懼貪婪指數、券資比、期貨未平倉、融資融券等關鍵數據，呼叫 Claude API（claude-haiku-4-5）生成一段約 50 字的三句式中文簡評，放在推播訊息最上方。未設定 ANTHROPIC_API_KEY 或 API 呼叫失敗時自動跳過，不影響其他指標正常推播。
+
+四、推播格式調整
+
+    1.訊息區塊順序調整為：(AI 簡評) → 大盤指數 → 市場情緒(VIX) → 美股恐懼貪婪指數 → 台積電 ADR → 券資比 → 期貨未平倉口數 → 融資融券。
+    2.台指期夜盤的漲跌幅文字說明調整為「較前一日收盤 +0.36%」，避免誤會百分比基準。
+
+五、雲端部署變更
+
+    1.新增 ANTHROPIC_API_KEY 至 GCP Secret Manager，並授權既有的 tw-stock-runner 服務帳戶讀取，沿用與 TG_BOT_TOKEN/TG_CHAT_ID 相同的金鑰管理方式，金鑰不會出現在程式碼或映像檔中。
+    2.重新建置並推送 Docker image 至 gcr.io/twseaftertradingdetect/tw_stock:latest，並更新既有 Cloud Run Job 設定加入新的 secret 環境變數。

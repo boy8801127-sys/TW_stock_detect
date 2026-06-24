@@ -42,7 +42,9 @@ DEFAULT_ORDER = [
     "cmoney_futures_night",
     "VIXTWN",
     "taifex_futures",
-    "cmoney_margin"
+    "cmoney_margin",
+    "cnn_fear_greed",
+    "tsm_adr_compare"
 ]
 
 # Scrapers kept in the repo for manual use (ORDERED_SCRAPERS) but not run by
@@ -264,9 +266,16 @@ def build_and_optionally_send(summary):
         log("compose_notification import failed; cannot build notification", "ERROR")
         return False, "compose_import_failed"
 
+    ai_text = None
+    try:
+        from scrapers.ai_summary import generate_summary
+        ai_text = generate_summary(summary)
+    except Exception:
+        log(f"ai_summary.generate_summary failed: {traceback.format_exc()}", "WARNING")
+
     try:
         if hasattr(cn, "build_message"):
-            message = cn.build_message(summary)
+            message = cn.build_message(summary, ai_text=ai_text)
         else:
             # fallback: write summary and call its main
             save_summary(summary)

@@ -89,3 +89,23 @@
 
     1.新增 ANTHROPIC_API_KEY 至 GCP Secret Manager，並授權既有的 tw-stock-runner 服務帳戶讀取，沿用與 TG_BOT_TOKEN/TG_CHAT_ID 相同的金鑰管理方式，金鑰不會出現在程式碼或映像檔中。
     2.重新建置並推送 Docker image 至 gcr.io/twseaftertradingdetect/tw_stock:latest，並更新既有 Cloud Run Job 設定加入新的 secret 環境變數。
+
+臺股開盤前風向提醒機器人 2.2版本更新日誌
+一、本次更新目標
+
+修復大盤融資維持率不再更新的問題：因監管因素，CMoney 的維持率欄位已停止更新，改回自行計算，並比照財經M平方改為「不含 ETF」的口徑。
+
+二、Bug 修復
+
+    1.融資維持率停止更新:恢復 maintenance_calc 進入預設排程（排在 cmoney_margin 之後），推播訊息與 AI 簡評的維持率皆改讀自算結果。融資餘額、增減、使用率、融券資料仍由 CMoney 提供。
+    2.維持率與 cmoney_margin 脫鉤:先前維持率顯示綁在 cmoney_margin 區塊內，該爬蟲失敗時維持率會一併消失；現在只要自算成功就會顯示。當日自算失敗時，改讀 results/latest_maintenance_calc.json 的前次數值並標註「（快取）」，處理方式比照 VIX。
+
+三、計算口徑變更
+
+    1.維持率 =（不含 ETF 之所有融資股票市值）／大盤融資餘額 =（Σ 個股融資股數 × 收盤價）／大盤融資餘額，比照財經M平方。此算法反映單純開槓桿做多的個體投資人所承受的實質回檔壓力，數值較敏感，更適合觀察個股賣壓與追繳風險。
+    2.ETF（代號 00 開頭）不計入分子，其融資市值僅記錄於 maintenance_calc_formula.csv 供稽核（貢獻度記為 0），並另存於摘要的 etf_excluded_value_billion 欄位；分母仍為 TWSE 公告的大盤融資金額。實測排除約 496 億 ETF 融資市值後，維持率由 189.7% 降至 181.3%。
+    3.註記含 ! 或 O 的個股沿用既有規則，不計入分子。
+
+四、雲端部署變更
+
+    1.重新以 Cloud Build 建置並推送 Docker image 至 gcr.io/twseaftertradingdetect/tw_stock:latest，並更新 Cloud Run Job（tw-stock-job，asia-east1）使用新映像檔。

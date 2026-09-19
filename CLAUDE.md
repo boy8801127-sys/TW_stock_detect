@@ -40,7 +40,7 @@ python -m scrapers.twse_margin_api
 | `RETRY` | `1` | Attempts per scraper on failure |
 | `LOG_LEVEL` | `INFO` | DEBUG / INFO / WARNING / ERROR |
 
-Default scraper order (when `ORDERED_SCRAPERS` not set): `twse_margin_api`, `twse_mi_index`, `VIXTWN`, `taifex_futures`, `maintenance_calc`.
+Default scraper order (when `ORDERED_SCRAPERS` not set): `twse_margin_api`, `twse_mi_index`, `cmoney_futures_night`, `VIXTWN`, `taifex_futures`, `cmoney_margin`, `maintenance_calc`, `cnn_fear_greed`, `tsm_adr_compare`. Any other scraper file under `scrapers/` is auto-appended unless listed in `EXCLUDED_FROM_AUTODISCOVERY` (currently empty).
 
 ## Architecture
 
@@ -75,7 +75,13 @@ Support modules (`compose_notification.py`, `tg_send.py`, `trading_day.py`, `uti
 
 ### Notification format (`compose_notification.py`)
 
-`build_message(summary)` reads the `summary["scrapers"]` dict and formats each section in order: 指數 → 券資比 → VIX → 期貨未平倉 → 融資市值 → 維持率. Unknown scrapers with recognizable data shapes get a generic fallback line. The function handles several nested data shapes for `maintenance_calc` (it checks `data.maintenance_calc`, `data` directly, and also tries loading `results/latest_maintenance_calc.json` as a fallback).
+`build_message(summary, ai_text=None)` reads the `summary["scrapers"]` dict and formats each section in order: (AI 簡評) → 大盤指數 → 市場情緒(VIX) → 美股恐懼貪婪指數 → 台積電 ADR → 券資比 → 期貨未平倉口數 → 融資融券.
+
+融資融券 section: balance / usage / short data come from `cmoney_margin`, but 維持率 comes from `maintenance_calc` (`data.maintenance_calc.maintenance_rate_pct`) and is shown independently of whether `cmoney_margin` succeeded. If `maintenance_calc` failed today, it falls back to `results/latest_maintenance_calc.json` and appends 「（快取）」 (same pattern as VIX). CMoney's own `maintenance_rate` field is no longer used — it stopped updating for regulatory reasons.
+
+### 維持率 calculation (`maintenance_calc.py`)
+
+維持率 = (Σ 個股融資股數 × 收盤價，**不含 ETF**) ÷ 大盤融資餘額, matching 財經M平方. ETF (code starts with `00`) is excluded from the numerator only; the denominator is TWSE's published 大盤融資金額 (includes ETF). Rows noted `!` are skipped and `O` are zeroed. Excluded ETF value is kept in the CSV audit trail and `etf_excluded_value_billion`.
 
 ## Docker
 

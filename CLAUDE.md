@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project does
 
-A daily automated bot that scrapes Taiwan stock market indicators (券資比, VIX, futures open interest, margin market cap, margin maintenance ratio) and sends a Chinese-language summary to Telegram before each trading day's open. It runs at 00:02 daily via GCP or Docker, skipping non-trading days automatically.
+A daily automated bot that scrapes Taiwan stock market indicators (券資比, VIX, futures open interest, margin market cap, margin maintenance ratio) and sends a Chinese-language summary to Telegram before each trading day's open. It runs at 08:00 (Asia/Taipei) daily via a GCP Cloud Run Job or Docker, skipping non-trading days automatically.
 
 ## Running the project
 
@@ -35,12 +35,10 @@ python -m scrapers.twse_margin_api
 | `DRY_RUN` | `true` | Skip sending even if AUTO_SEND=true |
 | `SKIP_TRADING_DAY_CHECK` | `false` | Bypass trading-day gate |
 | `ORDERED_SCRAPERS` | (see below) | Comma-separated module names to run |
-| `PARALLEL` | `false` | Run scrapers concurrently |
-| `MAX_WORKERS` | `4` | Thread count when PARALLEL=true |
 | `RETRY` | `1` | Attempts per scraper on failure |
 | `LOG_LEVEL` | `INFO` | DEBUG / INFO / WARNING / ERROR |
 
-Default scraper order (when `ORDERED_SCRAPERS` not set): `twse_margin_api`, `twse_mi_index`, `cmoney_futures_night`, `VIXTWN`, `taifex_futures`, `cmoney_margin`, `maintenance_calc`, `cnn_fear_greed`, `tsm_adr_compare`. Any other scraper file under `scrapers/` is auto-appended unless listed in `EXCLUDED_FROM_AUTODISCOVERY` (currently empty).
+Default scraper order (when `ORDERED_SCRAPERS` not set): `twse_margin_api`, `twse_mi_index`, `cmoney_futures_night`, `VIXTWN`, `taifex_futures`, `cmoney_margin`, `maintenance_calc`, `cnn_fear_greed`, `tsm_adr_compare`. Scrapers run only from this list (or `ORDERED_SCRAPERS`); a new scraper must be added to `DEFAULT_ORDER`.
 
 ## Architecture
 
@@ -48,14 +46,14 @@ Default scraper order (when `ORDERED_SCRAPERS` not set): `twse_margin_api`, `tws
 
 1. `_check_trading_day_or_exit()` — calls `scrapers.trading_day.is_twse_trading_day()`; exits 0 on non-trading days.
 2. `resolve_run_list()` — determines scraper order from `ORDERED_SCRAPERS` env var or `DEFAULT_ORDER`.
-3. `run_scrapers_in_order()` — runs each scraper sequentially (or in a thread pool if `PARALLEL=true`), with retry.
+3. `run_single_scraper()` — runs each scraper sequentially, with retry; calls the scraper's optional `save_result()` on success.
 4. `aggregate_results()` — collects all `(name, ok, result)` tuples into a summary dict.
 5. `save_summary()` — writes `results/latest_summary.json` atomically via temp file + `os.replace`.
 6. `build_and_optionally_send()` — calls `scrapers.compose_notification.build_message(summary)` to format the Chinese message, then optionally calls `scrapers.tg_send.send_message()`.
 
 ### Scraper contract
 
-Every file under `scrapers/` that should be auto-discovered must export a `fetch()` function. The function must return a dict in this shape:
+Every scraper listed in `DEFAULT_ORDER` must export a `fetch()` function. The function must return a dict in this shape:
 
 ```python
 {
@@ -69,15 +67,15 @@ Every file under `scrapers/` that should be auto-discovered must export a `fetch
 }
 ```
 
-Scrapers may also export an optional `save_result(result)` function — called by the pipeline after a successful `fetch()` to write a per-scraper JSON file under `results/`.
+Scrapers may also export an optional `save_result(result)` function — called by the pipeline after a successful `fetch()`. Most delegate to `utils.save_json(result, prefix)`, which writes `results/latest_<prefix>.json` plus a dated archive `results/<YYYY-MM-DD>_<prefix>.json`. Only the dated archives are synced to GCS, so anything that must survive between Cloud Run executions (day-over-day deltas, 「（快取）」 fallbacks) has to be read from a dated archive, never from `latest_*`.
 
-Support modules (`compose_notification.py`, `tg_send.py`, `trading_day.py`, `utils.py`) are not auto-discovered because they have no `fetch()`.
+`scrapers/utils.py` holds the shared helpers: `make_result`/`error_result` (build the dict above), `to_float`/`to_int`, `save_json`, `safe_parse_json`, `capture_xhr` (Playwright XHR interception used by the CMoney scrapers) and `run_cli` (the `python -m scrapers.<name>` entry point).
 
 ### Notification format (`compose_notification.py`)
 
 `build_message(summary, ai_text=None)` reads the `summary["scrapers"]` dict and formats each section in order: (AI 簡評) → 大盤指數 → 市場情緒(VIX) → 美股恐懼貪婪指數 → 台積電 ADR → 券資比 → 期貨未平倉口數 → 融資融券.
 
-融資融券 section: balance / usage / short data come from `cmoney_margin`, but 維持率 comes from `maintenance_calc` (`data.maintenance_calc.maintenance_rate_pct`) and is shown independently of whether `cmoney_margin` succeeded. If `maintenance_calc` failed today, it falls back to `results/latest_maintenance_calc.json` and appends 「（快取）」 (same pattern as VIX). CMoney's own `maintenance_rate` field is no longer used — it stopped updating for regulatory reasons.
+融資融券 section: balance / usage / short data come from `cmoney_margin`, but 維持率 comes from `maintenance_calc` (`data.maintenance_calc.maintenance_rate_pct`) and is shown independently of whether `cmoney_margin` succeeded. If `maintenance_calc` failed today, it falls back to the most recent dated archive `<date>_maintenance_calc.json` and appends 「（快取）」 (same pattern as VIX, which uses `<date>_taifex_vix.json`). CMoney's own `maintenance_rate` field is no longer used — it stopped updating for regulatory reasons.
 
 ### 維持率 calculation (`maintenance_calc.py`)
 
@@ -87,8 +85,6 @@ Support modules (`compose_notification.py`, `tg_send.py`, `trading_day.py`, `uti
 
 ```bash
 docker build -t tw-stock-detect .
-# With Playwright browsers (larger image):
-docker build --build-arg INSTALL_PLAYWRIGHT=true -t tw-stock-detect .
 
 docker run --env-file .env tw-stock-detect
 ```

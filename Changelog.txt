@@ -109,3 +109,25 @@
 四、雲端部署變更
 
     1.重新以 Cloud Build 建置並推送 Docker image 至 gcr.io/twseaftertradingdetect/tw_stock:latest，並更新 Cloud Run Job（tw-stock-job，asia-east1）使用新映像檔。
+臺股開盤前風向提醒機器人 2.3版本更新日誌
+一、本次更新目標
+
+修正雲端「（快取）」備援實際不會生效的問題，並精簡程式碼、縮小 Docker 映像檔，推播內容維持不變。
+
+二、Bug 修復
+
+    1.雲端快取備援失效:2.2 版與 VIX 的「（快取）」備援讀取的是 results/latest_*.json，但 Cloud Run Job 每次都是全新容器，且 GCS 只同步「日期_名稱.json」的日期存檔，所以雲端上當日抓取失敗時，備援其實讀不到任何資料。現改為：維持率新增日期存檔（<日期>_maintenance_calc.json），維持率與 VIX 的備援都改讀最近一份日期存檔，雲端才能正確帶出前次數值並標註「（快取）」。
+    2.維持率抓取失敗時不再顯示 0%:先前若證交所個股價格或融資明細請求失敗，程式會以空資料繼續計算，得出「維持率 0%」卻被當成成功；現改為直接視為失敗，交由上述快取備援處理。
+
+三、程式碼精簡（約 2,570 行降至約 1,500 行）
+
+    1.共用工具集中於 scrapers/utils.py：數值轉換、結果字典格式、存檔（latest + 日期存檔）、JSON 解析、Playwright 攔截 XHR、命令列執行，取代 8 份重複的 save_result、9 份數值轉換與 2 份幾乎相同的瀏覽器流程。
+    2.main.py 移除自動發現爬蟲（先前每次執行都會匯入 6 個支援檔再跳過）、檔案路徑匯入備援、並行執行（PARALLEL、MAX_WORKERS）、TG_MODULE，log 改用標準 logging（輸出至 stdout，避免 Cloud Logging 將一般訊息標為錯誤）。爬蟲只依 DEFAULT_ORDER 或 ORDERED_SCRAPERS 執行，新增爬蟲須加入 DEFAULT_ORDER。
+    3.移除未使用設定與死碼：TG_RETRY、TG_TIMEOUT、AI_SUMMARY_ENABLED、AI_SUMMARY_MODEL、compose_notification 單獨執行入口、twse_margin_api 從未被呼叫的 save 與 pct_change、cmoney_margin 不再使用的 maintenance_rate 欄位、taifex 未使用的 symbol 欄位。
+    4.移除 VIXTWN 的 Playwright 備援（雲端存檔顯示從未使用）、trading_day 的 yfinance 備援（08:00 時當日日線尚未產生，該備援只會誤判為非交易日）。
+    5.pytz 改用標準庫 zoneinfo，requirements.txt 移除未直接使用的 pandas、python-dateutil。
+
+四、雲端部署變更
+
+    1.Dockerfile 只安裝 chromium（先前安裝 chromium、firefox、webkit 三種），移除多餘的系統套件與 INSTALL_PLAYWRIGHT 開關；相依先於程式碼安裝，日後只改程式碼不需重裝瀏覽器。
+    2.重新以 Cloud Build 建置並推送映像檔，更新 Cloud Run Job（tw-stock-job）。

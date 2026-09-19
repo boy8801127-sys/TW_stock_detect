@@ -58,7 +58,7 @@
 
 **維持率計算方式**：比照財經M平方，維持率 =（不含 ETF 之所有融資股票市值）／大盤融資餘額 =（Σ 個股融資股數 × 收盤價）／大盤融資餘額。此算法反映單純開槓桿做多的個體投資人所承受的實質回檔壓力，數值較敏感，適合觀察個股賣壓與追繳風險。ETF（代號 00 開頭）不計入分子；分母為 TWSE 公告的大盤融資金額。註記含 `!`（暫停交易）或 `O`（暫停融資）的個股不計入分子。
 
-**注意事項**：v1.0 曾自行計算維持率；v2.0 改抓 CMoney 已算好的維持率；之後因監管因素 CMoney 不再更新該欄位，v2.2 起改回自行計算（並改為不含 ETF）。自算數值與券商、其他網站的數值可能有 1%-2% 的差異，屬計算口徑不同。若當日自算失敗，會退回使用 `results/latest_maintenance_calc.json` 的前次數值並標註「（快取）」。
+**注意事項**：v1.0 曾自行計算維持率；v2.0 改抓 CMoney 已算好的維持率；之後因監管因素 CMoney 不再更新該欄位，v2.2 起改回自行計算（並改為不含 ETF）。自算數值與券商、其他網站的數值可能有 1%-2% 的差異，屬計算口徑不同。若當日自算失敗，會退回使用最近一份日期存檔（`results/<日期>_maintenance_calc.json`，雲端由 GCS 同步）的前次數值並標註「（快取）」。
 
 ### 6. 美股恐懼貪婪指數（CNN Fear & Greed Index）
 
@@ -98,8 +98,7 @@
 - **Python 3.10+**
 - **主要套件**：
   - `requests` - HTTP 請求
-  - `pandas` - 數據處理
-  - `playwright` - 瀏覽器自動化（CMoney 爬蟲、VIX 備用方案）
+  - `playwright` - 瀏覽器自動化（CMoney 爬蟲）
   - `lxml` - HTML 解析
   - `pandas_market_calendars` - 交易日判斷
   - `google-cloud-storage` - 雲端歷史存檔同步（用於計算逐日變化）
@@ -144,9 +143,7 @@ TG_CHAT_ID=your_telegram_chat_id
 # 執行設定（選填）
 AUTO_SEND=true          # 是否自動發送訊息
 DRY_RUN=false           # 是否為測試模式
-ORDERED_SCRAPERS=twse_margin_api,twse_mi_index,cmoney_futures_night,VIXTWN,taifex_futures,cmoney_margin,cnn_fear_greed,tsm_adr_compare
-PARALLEL=false          # 是否並行執行
-MAX_WORKERS=4           # 並行執行時的最大工作數
+ORDERED_SCRAPERS=twse_margin_api,twse_mi_index,cmoney_futures_night,VIXTWN,taifex_futures,cmoney_margin,maintenance_calc,cnn_fear_greed,tsm_adr_compare  # 預設即為此順序
 RETRY=1                 # 失敗重試次數
 LOG_LEVEL=INFO          # 日誌級別
 SKIP_TRADING_DAY_CHECK=false  # 是否跳過交易日檢查
@@ -154,13 +151,11 @@ RESULTS_GCS_BUCKET=     # （雲端部署用）GCS bucket 名稱，用於同步�
 
 # AI 簡評（選填）
 ANTHROPIC_API_KEY=      # 設定後才會產生 AI 簡評區塊，未設定則自動跳過
-AI_SUMMARY_ENABLED=true # 設為 false 可關閉 AI 簡評
-AI_SUMMARY_MODEL=claude-haiku-4-5-20251001
 ```
 
 ### VIX 兩段式排程（避免資料尚未更新導致顯示異常值）
 
-VIX 來源 API 偶爾會在資料尚未更新時回傳無效的 `0`，程式已會自動判定 `<=0` 為錯誤、不覆蓋快取，並在當次抓取失敗時 fallback 使用 `results/latest_taifex_vix.json` 的前次有效值（顯示時會加註「（快取）」）。若要讓快取更新鮮，可額外在 00:00 左右新增一個只跑 VIX、不推播的排程：
+VIX 來源 API 偶爾會在資料尚未更新時回傳無效的 `0`，程式已會自動判定 `<=0` 為錯誤、不覆蓋快取，並在當次抓取失敗時 fallback 使用最近一份日期存檔（`results/<日期>_taifex_vix.json`，雲端由 GCS 同步）的前次有效值（顯示時會加註「（快取）」）。若要讓快取更新鮮，可額外在 00:00 左右新增一個只跑 VIX、不推播的排程：
 
 ```bash
 ORDERED_SCRAPERS=VIXTWN AUTO_SEND=false python main.py
@@ -194,7 +189,7 @@ TW_stock_detect/
 │   ├── compose_notification.py   # 訊息組裝
 │   ├── tg_send.py                # Telegram 發送
 │   ├── trading_day.py            # 交易日判斷
-│   └── utils.py                  # 工具函數
+│   └── utils.py                  # 共用工具（數值轉換、結果格式、存檔、瀏覽器攔截）
 ├── results/                # 數據輸出目錄（不包含在版本控制）
 ├── requirements.txt        # Python 依賴
 ├── Dockerfile              # Docker 映像檔設定
@@ -208,7 +203,7 @@ TW_stock_detect/
 
 ```bash
 docker build -t tw-stock-detect .
-# 預設已內建安裝 Playwright 瀏覽器（INSTALL_PLAYWRIGHT 預設為 true）
+# 映像檔內建 Playwright 的 chromium 瀏覽器
 ```
 
 ### 執行容器

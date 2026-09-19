@@ -63,9 +63,6 @@ def fetch():
     ratio_today = _safe_div(short_today, fin_today)
 
     ratio_delta = None if (ratio_prev is None or ratio_today is None) else (ratio_today - ratio_prev)
-    ratio_pct = None
-    if ratio_prev not in (None, 0) and ratio_delta is not None:
-        ratio_pct = ratio_delta / abs(ratio_prev)
 
     result = {
         "timestamp": int(time.time()),
@@ -76,8 +73,7 @@ def fetch():
             "ratio": {
                 "previous": ratio_prev,
                 "today": ratio_today,
-                "delta": ratio_delta,
-                "pct_change": ratio_pct
+                "delta": ratio_delta
             }
         },
         "meta": {"status": "ok" if any(v is not None for v in [fin_prev, fin_today, short_prev, short_today]) else "error", "elapsed_ms": None}

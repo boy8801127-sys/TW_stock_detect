@@ -6,26 +6,18 @@ import json
 from datetime import datetime, timezone
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "..", "results")
-SUMMARY_PATH = os.path.join(RESULTS_DIR, "latest_summary.json")
-MAINT_PATH = os.path.join(RESULTS_DIR, "latest_maintenance_calc.json")
-VIX_CACHE_PATH = os.path.join(RESULTS_DIR, "latest_taifex_vix.json")
 
 WEEKDAY_CN = ["一", "二", "三", "四", "五", "六", "日"]
 
 
-def _fmt_number(v, decimals=None):
+def _fmt_number(v, decimals):
     if v is None:
         return "-"
     try:
         vv = float(str(v).replace(",", "")) if isinstance(v, str) else float(v)
     except Exception:
         return str(v)
-    if decimals is None:
-        if abs(vv - int(vv)) < 1e-8:
-            return f"{int(vv):,}"
-        return f"{vv:,}"
-    fmt = f"{{:,.{decimals}f}}"
-    s = fmt.format(vv)
+    s = f"{vv:,.{decimals}f}"
     if "." in s:
         s = s.rstrip("0").rstrip(".")
     return s
@@ -311,24 +303,3 @@ def build_message(summary, ai_text=None):
     body = "\n\n".join(sections)
     footer = "━━━━━━━━━━━━━━━━━━━━"
     return f"{header}\n\n{body}\n\n{footer}" if body else header
-
-
-def load_summary(path=SUMMARY_PATH):
-    j = _load_json_try(path)
-    if j:
-        return j
-    j2 = _load_json_try(MAINT_PATH)
-    if j2:
-        return {"generated_at": None, "scrapers": {"maintenance_calc": j2.get("data", {}).get("maintenance_calc", j2.get("data", {}))}}
-    raise FileNotFoundError(f"Neither {path} nor {MAINT_PATH} found")
-
-
-def main():
-    summary = load_summary()
-    msg = build_message(summary)
-    print(msg)
-    return msg
-
-
-if __name__ == "__main__":
-    main()

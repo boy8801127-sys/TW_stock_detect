@@ -5,10 +5,7 @@ Traditional Chinese narrative (~50 chars, three sentences). Not auto-discovered 
 a regular scraper: it needs the full aggregated summary (after all scrapers have
 run), so it's invoked explicitly from main.build_and_optionally_send().
 
-Configure via environment variables:
-  ANTHROPIC_API_KEY  - required; if unset, generate_summary() returns None
-  AI_SUMMARY_ENABLED - default "true"; set "false" to skip
-  AI_SUMMARY_MODEL    - default "claude-haiku-4-5-20251001"
+Configure via environment variable ANTHROPIC_API_KEY; if unset, generate_summary() returns None.
 """
 import os
 import json
@@ -16,6 +13,7 @@ import requests
 
 API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
+MODEL = "claude-haiku-4-5-20251001"
 
 PROMPT_TEMPLATE = """你是台股開盤前指標分析助手。根據以下 JSON 數據，用繁體中文寫一段約 50 字的簡評，務必恰好三句：
 第一句：夜盤指數與前一交易日台股收盤的比較（漲跌方向與幅度）。
@@ -90,9 +88,6 @@ def _extract_key_facts(summary):
 
 
 def generate_summary(summary):
-    if os.getenv("AI_SUMMARY_ENABLED", "true").lower() not in ("1", "true", "yes"):
-        return None
-
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return None
@@ -101,7 +96,6 @@ def generate_summary(summary):
     if not facts:
         return None
 
-    model = os.getenv("AI_SUMMARY_MODEL", "claude-haiku-4-5-20251001")
     prompt = PROMPT_TEMPLATE.format(facts=json.dumps(facts, ensure_ascii=False))
 
     try:
@@ -113,7 +107,7 @@ def generate_summary(summary):
                 "content-type": "application/json",
             },
             json={
-                "model": model,
+                "model": MODEL,
                 "max_tokens": 200,
                 "messages": [{"role": "user", "content": prompt}],
             },
@@ -126,15 +120,3 @@ def generate_summary(summary):
     except Exception as e:
         print(f"[ai_summary.generate_summary] failed: {e}")
         return None
-
-
-if __name__ == "__main__":
-    sample_summary = {
-        "scrapers": {
-            "cmoney_futures_night": {"ok": True, "data": {"night_futures": {"index": 23510, "change": 85, "pct_change": 0.36}}},
-            "VIXTWN": {"ok": True, "data": {"vix": {"value": 18.32}}},
-            "cnn_fear_greed": {"ok": True, "data": {"score": 32, "rating": "恐懼"}},
-            "twse_margin_api": {"ok": True, "data": {"ratio": {"today": 0.0234, "delta": 0.0005}}},
-        }
-    }
-    print(generate_summary(sample_summary))

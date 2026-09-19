@@ -432,10 +432,15 @@ def fetch():
 def save_result(result):
     os.makedirs(RESULT_DIR, exist_ok=True)
     latest = os.path.join(RESULT_DIR, "latest_maintenance_calc.json")
+    tag = time.strftime("%Y-%m-%d", time.gmtime())
+    archive = os.path.join(RESULT_DIR, f"{tag}_maintenance_calc.json")
     tmp = latest + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
     os.replace(tmp, latest)
+    if not os.path.exists(archive):
+        with open(archive, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
     return latest
 
 if __name__ == "__main__":

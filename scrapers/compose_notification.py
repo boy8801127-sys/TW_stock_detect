@@ -92,6 +92,11 @@ def _find_previous_value(prefix, today_str, extractor):
         return None
 
 
+def _vix_value(j):
+    v = j.get("data", {}).get("vix", {}).get("value")
+    return v if v is not None and v > 0 else None
+
+
 def _vix_interpret_by_change(pct_change):
     if pct_change is None:
         return "情緒平穩（無前日資料可比較）"
@@ -171,22 +176,12 @@ def build_message(summary, ai_text=None):
 
     # ── 市場情緒 (VIX) ────────────────────────
     vix_entry = scrapers.get("VIXTWN") or {}
-    val = None
-    from_cache = False
-    if vix_entry.get("ok"):
-        val = vix_entry.get("data", {}).get("vix", {}).get("value")
-    if val is None or val <= 0:
-        cached = _load_json_try(VIX_CACHE_PATH)
-        if cached:
-            cached_val = cached.get("data", {}).get("vix", {}).get("value")
-            if cached_val is not None and cached_val > 0:
-                val = cached_val
-                from_cache = True
+    val = _vix_value(vix_entry) if vix_entry.get("ok") else None
+    from_cache = val is None
+    if from_cache:
+        val = _find_previous_value("taifex_vix", today_str, _vix_value)
     if val is not None:
-        prev = _find_previous_value(
-            "taifex_vix", today_str,
-            lambda j: j.get("data", {}).get("vix", {}).get("value"),
-        )
+        prev = _find_previous_value("taifex_vix", today_str, _vix_value)
         delta = (val - prev) if prev is not None else None
         pct = (delta / prev * 100) if (delta is not None and prev) else None
         sym = _sign_symbol(delta)
@@ -270,18 +265,14 @@ def build_message(summary, ai_text=None):
     margin_lines = []
 
     # 維持率改用自行計算（CMoney 官方數值因監管因素已不再更新），
-    # 與 cmoney_margin 是否成功無關；若當天算不出來則退回前一次快取（比照 VIX 的處理方式）
-    maint_calc = scrapers.get("maintenance_calc", {}).get("data", {}).get("maintenance_calc", {})
-    maint = maint_calc.get("maintenance_rate_pct")
-    maint_from_cache = False
-    if maint is None:
-        cached = _load_json_try(MAINT_PATH)
-        if cached:
-            cached_calc = cached.get("data", {}).get("maintenance_calc", {})
-            if cached_calc.get("maintenance_rate_pct") is not None:
-                maint_calc = cached_calc
-                maint = cached_calc.get("maintenance_rate_pct")
-                maint_from_cache = True
+    # 與 cmoney_margin 是否成功無關；若當天算不出來則退回最近一份日期存檔（GCS 只同步日期存檔）
+    maint = scrapers.get("maintenance_calc", {}).get("data", {}).get("maintenance_calc", {}).get("maintenance_rate_pct")
+    maint_from_cache = maint is None
+    if maint_from_cache:
+        maint = _find_previous_value(
+            "maintenance_calc", today_str,
+            lambda j: j["data"]["maintenance_calc"]["maintenance_rate_pct"],
+        )
 
     bal = margin.get("balance_billion")
     if bal is not None:

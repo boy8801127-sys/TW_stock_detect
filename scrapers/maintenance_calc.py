@@ -1,10 +1,12 @@
 # scrapers/maintenance_calc.py
 """
 計算 大盤融資維持率（market-level）並輸出每檔計算明細 CSV（含精確數值、累積百分比、top contributors）
+- 計算邏輯比照財經M平方：融資維持率 =（不含 ETF 之所有融資股票市值）／大盤融資餘額
+  ETF（代號 00 開頭）的融資市值不計入分子，僅記錄於明細供稽核；分母仍為 TWSE 公告的大盤融資金額（含 ETF）
 - 包含：
-  - maintenance_calc_formula.csv: 每檔明細，含精確 fin_value 與 numerator_contribution_precise、cumulative_pct（以 denominator 計）
+  - maintenance_calc_formula.csv: 每檔明細，含精確 fin_value 與 numerator_contribution_precise、cumulative_pct（以 denominator 計，ETF 貢獻度為 0）
   - top_contributors.csv: 依 numerator_contribution_precise 排序的 top N（預設 top 50）
-  - results/latest_maintenance_calc.json: summary（含 numerator, denominator, maintenance_rate, maintenance_rate_pct, numerator_billion, denominator_billion）
+  - results/latest_maintenance_calc.json: summary（含 numerator（不含ETF）, denominator, maintenance_rate, maintenance_rate_pct, numerator_billion, denominator_billion, etf_excluded_value_billion）
 - 註記處理規則維持你的設定（'!'/'O'/'X'）
 依賴: requests, csv, decimal
 """
@@ -217,7 +219,8 @@ def compute_and_export(top_n=50):
     denom_thousands = summary["margin_amount_thousands"]
     denominator = (denom_thousands * Decimal(1000)) if isinstance(denom_thousands, Decimal) else Decimal(denom_thousands) * Decimal(1000)
 
-    numerator = Decimal('0')
+    numerator = Decimal('0')  # 不含 ETF（比照財經M平方計算邏輯）
+    etf_excluded_value = Decimal('0')
     processed = 0
     skipped = 0
     skipped_examples = []
@@ -242,7 +245,7 @@ def compute_and_export(top_n=50):
         code_s = str(code).zfill(4)
         note = (item.get("註記") or item.get("Note") or item.get("remarks") or "").strip()
         flags, flags_str = parse_note_flags(note)
-        is_etf = str(code).startswith("00")
+        is_etf = code_s.startswith("00")
 
         fin_lots_raw = _to_int_safe(item.get("融資今日餘額") or item.get("融資今日餘額(股)") or item.get("融資"))
         short_lots_raw = _to_int_safe(item.get("融券今日餘額") or item.get("融券今日餘額(張)") or item.get("融券"))
@@ -295,12 +298,20 @@ def compute_and_export(top_n=50):
             else:
                 fin_value_used_decimal = Decimal(fin_shares_used) * Decimal(str(price))
 
-        numerator += fin_value_used_decimal
-        if fin_value_used_decimal > 0:
-            processed += 1
+        if is_etf:
+            # ETF 不計入分子（比照財經M平方：融資維持率僅反映個股，不含 ETF）
+            etf_excluded_value += fin_value_used_decimal
+            numerator_contrib_decimal = Decimal('0')
+            formula_text = "ETF excluded from numerator (M平方 methodology)"
+        else:
+            numerator += fin_value_used_decimal
+            if fin_value_used_decimal > 0:
+                processed += 1
+            numerator_contrib_decimal = fin_value_used_decimal
+            formula_text = "fin_value = fin_lots_used * SHARE_PER_LOT * closing_price"
 
         fin_value_precise = format(fin_value_used_decimal, 'f')
-        numerator_contrib_precise = fin_value_precise
+        numerator_contrib_precise = format(numerator_contrib_decimal, 'f')
 
         rows_out.append({
             "code": code_s,
@@ -315,9 +326,9 @@ def compute_and_export(top_n=50):
             "fin_shares_used": fin_shares_used,
             "fin_value_used": float(round(fin_value_used_decimal, 2)),
             "fin_value_precise": fin_value_precise,
-            "numerator_contribution": float(round(fin_value_used_decimal, 2)),
+            "numerator_contribution": float(round(numerator_contrib_decimal, 2)),
             "numerator_contribution_precise": numerator_contrib_precise,
-            "formula_text": "fin_value = fin_lots_used * SHARE_PER_LOT * closing_price",
+            "formula_text": formula_text,
             "cumulative_pct": 0.0  # placeholder, fill later
         })
 
@@ -384,11 +395,14 @@ def compute_and_export(top_n=50):
     # add friendly units (billion = 億) to JSON
     numerator_billion = float(numerator / Decimal('100000000'))  # 億
     denominator_billion = float(denominator / Decimal('100000000'))  # 億
+    etf_excluded_value_billion = float(etf_excluded_value / Decimal('100000000'))  # 億
 
     summary = {
         "ok": True,
-        "numerator": float(numerator),
+        "numerator": float(numerator),  # 不含 ETF
         "numerator_billion": numerator_billion,
+        "etf_excluded_value": float(etf_excluded_value),
+        "etf_excluded_value_billion": etf_excluded_value_billion,
         "denominator": float(denominator),
         "denominator_billion": denominator_billion,
         "maintenance_rate": float(maintenance_rate),

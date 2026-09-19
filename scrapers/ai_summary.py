@@ -72,10 +72,12 @@ def _extract_key_facts(summary):
 
     margin = _get(scrapers, "cmoney_margin", "data", "margin") or {}
     short = _get(scrapers, "cmoney_margin", "data", "short") or {}
+    maint_calc = _get(scrapers, "maintenance_calc", "data", "maintenance_calc") or {}
     if margin.get("balance_billion") is not None:
         facts["融資餘額_億"] = margin.get("balance_billion")
         facts["融資使用率"] = margin.get("usage_rate")
-        facts["融資維持率"] = margin.get("maintenance_rate")
+    if maint_calc.get("maintenance_rate_pct") is not None:
+        facts["融資維持率"] = round(maint_calc["maintenance_rate_pct"], 2)
     if short.get("balance_lots") is not None:
         facts["融券餘額_張"] = short.get("balance_lots")
         facts["融券使用率"] = short.get("usage_rate")

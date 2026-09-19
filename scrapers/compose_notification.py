@@ -263,43 +263,56 @@ def build_message(summary, ai_text=None):
         if fut_lines:
             sections.append("━━━━━━ 期貨未平倉口數 ━━━━━━\n" + "\n".join(fut_lines))
 
-    # ── 融資融券 (CMoney) ─────────────────────
-    if "cmoney_margin" in scrapers:
-        data = scrapers["cmoney_margin"].get("data", {})
-        margin = data.get("margin", {})
-        short = data.get("short", {})
-        margin_lines = []
+    # ── 融資融券 ────────────────────────────
+    cmoney_data = scrapers.get("cmoney_margin", {}).get("data", {})
+    margin = cmoney_data.get("margin", {})
+    short = cmoney_data.get("short", {})
+    margin_lines = []
 
-        bal = margin.get("balance_billion")
-        if bal is not None:
-            chg = margin.get("change_billion")
-            sym = _sign_symbol(chg)
-            chg_str = f"  {sym} {_fmt_signed(chg, 0)}億" if chg is not None else ""
-            margin_lines.append(f"💰 融資餘額：{_fmt_number(bal, 0)}億{chg_str}")
+    # 維持率改用自行計算（CMoney 官方數值因監管因素已不再更新），
+    # 與 cmoney_margin 是否成功無關；若當天算不出來則退回前一次快取（比照 VIX 的處理方式）
+    maint_calc = scrapers.get("maintenance_calc", {}).get("data", {}).get("maintenance_calc", {})
+    maint = maint_calc.get("maintenance_rate_pct")
+    maint_from_cache = False
+    if maint is None:
+        cached = _load_json_try(MAINT_PATH)
+        if cached:
+            cached_calc = cached.get("data", {}).get("maintenance_calc", {})
+            if cached_calc.get("maintenance_rate_pct") is not None:
+                maint_calc = cached_calc
+                maint = cached_calc.get("maintenance_rate_pct")
+                maint_from_cache = True
 
-            usage = margin.get("usage_rate")
-            maint = margin.get("maintenance_rate")
-            parts = []
-            if usage is not None:
-                parts.append(f"使用率 {usage:.2f}%")
-            if maint is not None:
-                emoji, label = _maintenance_level(maint)
-                parts.append(f"維持率 {maint:.1f}%  {emoji} {label}")
-            if parts:
-                margin_lines.append("   " + "  ".join(parts))
+    bal = margin.get("balance_billion")
+    if bal is not None:
+        chg = margin.get("change_billion")
+        sym = _sign_symbol(chg)
+        chg_str = f"  {sym} {_fmt_signed(chg, 0)}億" if chg is not None else ""
+        margin_lines.append(f"💰 融資餘額：{_fmt_number(bal, 0)}億{chg_str}")
 
-        short_bal = short.get("balance_lots")
-        if short_bal is not None:
-            chg = short.get("change_lots")
-            sym = _sign_symbol(chg)
-            chg_str = f"  {sym} {_fmt_signed(chg, 0)}張" if chg is not None else ""
-            margin_lines.append(f"\n🔻 融券餘額：{_fmt_number(short_bal, 0)}張{chg_str}")
-            usage = short.get("usage_rate")
-            if usage is not None:
-                margin_lines.append(f"   使用率 {usage:.2f}%")
+    maint_parts = []
+    usage = margin.get("usage_rate")
+    if bal is not None and usage is not None:
+        maint_parts.append(f"使用率 {usage:.2f}%")
+    if maint is not None:
+        emoji, label = _maintenance_level(maint)
+        cache_note = "（快取）" if maint_from_cache else ""
+        maint_parts.append(f"維持率 {maint:.1f}%{cache_note}  {emoji} {label}")
+    if maint_parts:
+        margin_lines.append(("📐 " if bal is None else "   ") + "  ".join(maint_parts))
 
-        if margin_lines:
-            sections.append("━━━━━━ 融資融券 ━━━━━━\n" + "\n".join(margin_lines))
+    short_bal = short.get("balance_lots")
+    if short_bal is not None:
+        chg = short.get("change_lots")
+        sym = _sign_symbol(chg)
+        chg_str = f"  {sym} {_fmt_signed(chg, 0)}張" if chg is not None else ""
+        margin_lines.append(f"\n🔻 融券餘額：{_fmt_number(short_bal, 0)}張{chg_str}")
+        usage = short.get("usage_rate")
+        if usage is not None:
+            margin_lines.append(f"   使用率 {usage:.2f}%")
+
+    if margin_lines:
+        sections.append("━━━━━━ 融資融券 ━━━━━━\n" + "\n".join(margin_lines))
 
     header = f"📊 台股早盤指標 — {today_str}（{weekday}）"
     if ai_text:

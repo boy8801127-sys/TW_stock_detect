@@ -43,13 +43,14 @@ DEFAULT_ORDER = [
     "VIXTWN",
     "taifex_futures",
     "cmoney_margin",
+    "maintenance_calc",
     "cnn_fear_greed",
     "tsm_adr_compare"
 ]
 
-# Scrapers kept in the repo for manual use (ORDERED_SCRAPERS) but not run by
-# default via auto-discovery, since they've been superseded by another module.
-EXCLUDED_FROM_AUTODISCOVERY = {"maintenance_calc"}
+# Module names to keep out of auto-discovery (e.g. kept in the repo for manual
+# use via ORDERED_SCRAPERS but not meant to run by default). Currently empty.
+EXCLUDED_FROM_AUTODISCOVERY = set()
 
 os.makedirs(RESULTS_DIR, exist_ok=True)
 

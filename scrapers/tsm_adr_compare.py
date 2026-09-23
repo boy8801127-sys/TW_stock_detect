@@ -38,7 +38,10 @@ def _last_close(ticker, exclude_today_tz=None):
             return None, None
 
     row = hist.tail(1)
-    return float(row["Close"].iloc[0]), row.index[0].strftime("%Y-%m-%d")
+    close = float(row["Close"].iloc[0])
+    if close != close:  # NaN check without importing math
+        return None, None
+    return close, row.index[0].strftime("%Y-%m-%d")
 
 
 def fetch():

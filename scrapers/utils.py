@@ -12,11 +12,17 @@ HEADERS = {"User-Agent": USER_AGENT}
 
 
 def to_float(s):
-    """'1,234.5' -> 1234.5；空值或無法解析回傳 None。"""
+    """'1,234.5' -> 1234.5；空值、NaN 或無法解析回傳 None。
+
+    float("nan") 不會拋 ValueError，若不擋下，上游 API 回傳的 NaN
+    （json.loads 預設會接受非標準的 NaN token）會被當成合法數字，
+    一路帶進通知訊息顯示成「nan」。
+    """
     try:
-        return None if s in (None, "") else float(str(s).replace(",", "").strip())
+        v = None if s in (None, "") else float(str(s).replace(",", "").strip())
     except ValueError:
         return None
+    return None if v is not None and v != v else v
 
 
 def to_int(s):
@@ -96,3 +102,15 @@ def run_cli(fetch, save=None):
     if save and res["meta"].get("status") == "ok":
         save(res)
     print(json.dumps(res, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    assert to_float("1,234.5") == 1234.5
+    assert to_float("") is None
+    assert to_float(None) is None
+    assert to_float("N/A") is None
+    assert to_float(float("nan")) is None
+    assert to_float("nan") is None
+    assert to_int("1,234.5") == 1234
+    assert to_int(float("nan")) is None
+    print("utils self-check ok")

@@ -34,6 +34,8 @@ spec:
                 secretKeyRef:
                   key: latest
                   name: TG_CHAT_ID
+            - name: TG_ERROR_CHAT_ID
+              value: 'YOUR_TEST_CHANNEL_CHAT_ID'
             image: gcr.io/YOUR_PROJECT_ID/tw_stock:latest
             resources:
               limits:

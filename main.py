@@ -24,6 +24,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 AUTO_SEND = os.getenv("AUTO_SEND", "false").lower() in ("1", "true", "yes")
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() in ("1", "true", "yes")
 SKIP_TRADING_DAY_CHECK = os.getenv("SKIP_TRADING_DAY_CHECK", "false").lower() in ("1", "true", "yes")
+TG_ERROR_CHAT_ID = os.getenv("TG_ERROR_CHAT_ID", "").strip()
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results")
 SUMMARY_PATH = os.path.join(RESULTS_DIR, "latest_summary.json")
 
@@ -130,6 +131,36 @@ def aggregate_results(results):
     return summary
 
 
+def build_error_report(results):
+    """Short plain-text report of scrapers that failed, or None if all ok."""
+    failed = [(name, res.get("meta", {}).get("message")) for name, ok, res in results if not ok]
+    if not failed:
+        return None
+    lines = ["⚠️ TW Stock Bot 執行錯誤通報", ""]
+    for name, msg in failed:
+        lines.append(f"❌ {name}: {msg or '(無錯誤訊息)'}")
+    return "\n".join(lines)
+
+
+def send_error_report(results):
+    """Sends build_error_report() to TG_ERROR_CHAT_ID if configured. No-op otherwise."""
+    report = build_error_report(results)
+    if not report:
+        return
+    log(report, "WARNING")
+    if not TG_ERROR_CHAT_ID:
+        return
+    if not AUTO_SEND or DRY_RUN:
+        log("AUTO_SEND/DRY_RUN disabled; not sending error report", "INFO")
+        return
+    try:
+        from scrapers.tg_send import send_message
+        send_message(report, chat_id=TG_ERROR_CHAT_ID)
+        log("Error report sent to TG_ERROR_CHAT_ID")
+    except Exception:
+        log(f"Failed to send error report: {traceback.format_exc()}", "ERROR")
+
+
 def save_summary(summary):
     tmp = SUMMARY_PATH + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -186,6 +217,7 @@ def main():
     results = [run_single_scraper(name) for name in resolve_run_list()]
     summary = aggregate_results(results)
     save_summary(summary)
+    send_error_report(results)
 
     sent_ok, reason = build_and_optionally_send(summary)
     if not sent_ok:

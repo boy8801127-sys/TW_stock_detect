@@ -11,14 +11,15 @@ TG_TOKEN = os.getenv("TG_BOT_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 
 
-def send_message(text):
-    if not TG_TOKEN or not TG_CHAT_ID:
-        raise RuntimeError("TG_BOT_TOKEN or TG_CHAT_ID not set in environment")
+def send_message(text, chat_id=None):
+    chat_id = chat_id or TG_CHAT_ID
+    if not TG_TOKEN or not chat_id:
+        raise RuntimeError("TG_BOT_TOKEN or chat_id not set in environment")
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     last_err = None
     for _ in range(2):
         try:
-            r = requests.post(url, json={"chat_id": TG_CHAT_ID, "text": text}, timeout=10)
+            r = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=10)
             r.raise_for_status()
             data = r.json()
             if data.get("ok"):

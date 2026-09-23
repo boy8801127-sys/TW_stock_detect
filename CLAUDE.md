@@ -31,6 +31,7 @@ python -m scrapers.twse_margin_api
 |---|---|---|
 | `TG_BOT_TOKEN` | — | Telegram bot token (required to send) |
 | `TG_CHAT_ID` | — | Telegram chat ID (required to send) |
+| `TG_ERROR_CHAT_ID` | — | Optional separate chat ID for scraper-failure error reports (see below) |
 | `AUTO_SEND` | `false` | Actually call Telegram API |
 | `DRY_RUN` | `true` | Skip sending even if AUTO_SEND=true |
 | `SKIP_TRADING_DAY_CHECK` | `false` | Bypass trading-day gate |
@@ -49,7 +50,8 @@ Default scraper order (when `ORDERED_SCRAPERS` not set): `twse_margin_api`, `tws
 3. `run_single_scraper()` — runs each scraper sequentially, with retry; calls the scraper's optional `save_result()` on success.
 4. `aggregate_results()` — collects all `(name, ok, result)` tuples into a summary dict.
 5. `save_summary()` — writes `results/latest_summary.json` atomically via temp file + `os.replace`.
-6. `build_and_optionally_send()` — calls `scrapers.compose_notification.build_message(summary)` to format the Chinese message, then optionally calls `scrapers.tg_send.send_message()`.
+6. `send_error_report()` — if any scraper failed and `TG_ERROR_CHAT_ID` is set, sends a short list of failed scrapers + their `meta.message` to that chat (separate from the main notification chat), gated by the same `AUTO_SEND`/`DRY_RUN` switches.
+7. `build_and_optionally_send()` — calls `scrapers.compose_notification.build_message(summary)` to format the Chinese message, then optionally calls `scrapers.tg_send.send_message()`.
 
 ### Scraper contract
 

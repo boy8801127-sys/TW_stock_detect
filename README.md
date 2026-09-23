@@ -139,6 +139,7 @@ pip install -r requirements.txt
 # Telegram Bot 設定（必填）
 TG_BOT_TOKEN=your_telegram_bot_token
 TG_CHAT_ID=your_telegram_chat_id
+TG_ERROR_CHAT_ID=      # （選填）爬蟲失敗時的錯誤通報要傳到哪個聊天室/頻道，留空則不送錯誤通報
 
 # 執行設定（選填）
 AUTO_SEND=true          # 是否自動發送訊息

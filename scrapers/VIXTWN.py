@@ -37,8 +37,14 @@ def fetch():
     last_raw = quotes[0].get("CLastPrice") if quotes and isinstance(quotes[0], dict) else None
     last_val = to_float(last_raw)
     # 來源偶爾回傳 0 當佔位值，視為錯誤以免覆蓋快取
-    return make_result(URL, {"vix": {"raw": last_raw, "value": last_val}},
-                       status="ok" if last_val is not None and last_val > 0 else "error", elapsed_ms=elapsed)
+    if last_val is not None and last_val > 0:
+        return make_result(URL, {"vix": {"raw": last_raw, "value": last_val}}, elapsed_ms=elapsed)
+    return error_result(
+        URL,
+        f"no usable CLastPrice (raw={last_raw!r}, RtCode={payload.get('RtCode')!r}, "
+        f"RtMsg={payload.get('RtMsg')!r}, QuoteList_len={len(quotes)})",
+        elapsed_ms=elapsed,
+    )
 
 
 def save_result(result):

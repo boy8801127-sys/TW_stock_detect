@@ -44,12 +44,30 @@ def _last_close(ticker, exclude_today_tz=None):
     return close, row.index[0].strftime("%Y-%m-%d")
 
 
+def _live_rate(ticker):
+    """Returns the current live quote, falling back to the last daily close.
+
+    USD/TWD moves throughout the day, so the ADR premium calc should use the
+    rate at run time rather than yesterday's daily-bar close.
+    """
+    import yfinance as yf
+
+    try:
+        price = float(yf.Ticker(ticker).fast_info["last_price"])
+        if price == price:  # not NaN
+            return price
+    except Exception:
+        pass
+    close, _ = _last_close(ticker)
+    return close
+
+
 def fetch():
     t0 = time.time()
     try:
         adr_close, adr_date = _last_close("TSM")
         twse_close, twse_date = _last_close("2330.TW", exclude_today_tz="Asia/Taipei")
-        usdtwd, _ = _last_close("TWD=X")
+        usdtwd = _live_rate("TWD=X")
     except Exception as e:
         return error_result(SOURCE, f"yfinance error: {e}")
 

@@ -11,6 +11,8 @@ import os
 import json
 import requests
 
+from .compose_notification import _vix_history
+
 API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 MODEL = "claude-haiku-4-5-20251001"
@@ -42,11 +44,9 @@ def _extract_key_facts(summary):
         facts["夜盤漲跌"] = nf.get("change")
         facts["夜盤漲跌幅"] = nf.get("pct_change")
 
-    vix_entry = scrapers.get("VIXTWN") or {}
-    if vix_entry.get("ok"):
-        vix_val = _get(vix_entry, "data", "vix", "value")
-        if vix_val and vix_val > 0:
-            facts["VIX"] = vix_val
+    vix_hist = _vix_history(summary.get("generated_at", "")[:10])
+    if vix_hist:
+        facts["VIX"] = vix_hist[0][1]
 
     fg = _get(scrapers, "cnn_fear_greed", "data") or {}
     if fg.get("score") is not None:

@@ -144,7 +144,7 @@ TG_ERROR_CHAT_ID=      # （選填）爬蟲失敗時的錯誤通報要傳到哪�
 # 執行設定（選填）
 AUTO_SEND=true          # 是否自動發送訊息
 DRY_RUN=false           # 是否為測試模式
-ORDERED_SCRAPERS=twse_margin_api,twse_mi_index,cmoney_futures_night,VIXTWN,taifex_futures,cmoney_margin,maintenance_calc,cnn_fear_greed,tsm_adr_compare  # 預設即為此順序
+ORDERED_SCRAPERS=twse_margin_api,twse_mi_index,cmoney_futures_night,taifex_futures,cmoney_margin,maintenance_calc,cnn_fear_greed,tsm_adr_compare  # 預設即為此順序（VIX 見下方排程）
 RETRY=1                 # 失敗重試次數
 LOG_LEVEL=INFO          # 日誌級別
 SKIP_TRADING_DAY_CHECK=false  # 是否跳過交易日檢查
@@ -154,15 +154,20 @@ RESULTS_GCS_BUCKET=     # （雲端部署用）GCS bucket 名稱，用於同步�
 ANTHROPIC_API_KEY=      # 設定後才會產生 AI 簡評區塊，未設定則自動跳過
 ```
 
-### VIX 兩段式排程（避免資料尚未更新導致顯示異常值）
+### VIX 排程（13:30 擷取、下一開盤日 08:00 推播）
 
-VIX 來源 API 偶爾會在資料尚未更新時回傳無效的 `0`，程式已會自動判定 `<=0` 為錯誤、不覆蓋快取，並在當次抓取失敗時 fallback 使用最近一份日期存檔（`results/<日期>_taifex_vix.json`，雲端由 GCS 同步）的前次有效值（顯示時會加註「（快取）」）。若要讓快取更新鮮，可額外在 00:00 左右新增一個只跑 VIX、不推播的排程：
+VIX 來源 API 在開盤前常回傳無效的 `0`，因此不在 08:00 即時抓取，改為：
+
+- **每個交易日 13:30（Asia/Taipei）**：只跑 VIX、不推播，擷取值存成當日的 `results/<日期>_taifex_vix.json`（雲端由 GCS 同步）。
+- **08:00 推播**：不再抓 VIX，直接讀最近一份早於今天的日期存檔，即上一個開盤日 13:30 的值；VIX 區塊會標註擷取時間（例如「10-09 13:30」），漲跌為與再前一筆擷取值的比較。
+
+13:30 的排程指令：
 
 ```bash
 ORDERED_SCRAPERS=VIXTWN AUTO_SEND=false python main.py
 ```
 
-雲端部署時，可在既有 Cloud Run Job 之外，另建一個 Cloud Scheduler 於 00:00（Asia/Taipei）觸發同一個 Job，並覆寫 `ORDERED_SCRAPERS=VIXTWN`、`AUTO_SEND=false`；08:00 的既有排程維持原樣即可。
+雲端部署時，另建一個 Cloud Scheduler 於 13:30（Asia/Taipei，僅週一至週五）觸發同一個 Job，並覆寫 `ORDERED_SCRAPERS=VIXTWN`、`AUTO_SEND=false`；08:00 的既有排程維持原樣即可。注意 `AUTO_SEND` 必須為 `false`，否則 13:30 會只推一則 VIX 訊息。
 
 ### 4. 執行
 

@@ -29,11 +29,11 @@ RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results")
 SUMMARY_PATH = os.path.join(RESULTS_DIR, "latest_summary.json")
 
 # Scrapers run in this order (module filenames under scrapers/); maintenance_calc must follow cmoney_margin
+# VIXTWN 不在預設清單：13:30 另以 ORDERED_SCRAPERS=VIXTWN 擷取存檔，08:00 推播讀最近一筆存檔
 DEFAULT_ORDER = [
     "twse_margin_api",
     "twse_mi_index",
     "cmoney_futures_night",
-    "VIXTWN",
     "taifex_futures",
     "cmoney_margin",
     "maintenance_calc",

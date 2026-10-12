@@ -89,6 +89,19 @@ def _vix_value(j):
     return v if v is not None and v > 0 else None
 
 
+def _vix_history(today_str):
+    """所有早於 today_str 的 VIX 日期存檔（即 13:30 擷取值），由新到舊回傳 [(date, value), ...]。"""
+    out = []
+    for fp in glob.glob(os.path.join(RESULTS_DIR, "*_taifex_vix.json")):
+        m = re.match(r"^(\d{4}-\d{2}-\d{2})_taifex_vix\.json$", os.path.basename(fp))
+        if not m or m.group(1) >= today_str:
+            continue
+        v = _vix_value(_load_json_try(fp) or {})
+        if v is not None:
+            out.append((m.group(1), v))
+    return sorted(out, reverse=True)
+
+
 def _vix_interpret_by_change(pct_change):
     if pct_change is None:
         return "情緒平穩（無前日資料可比較）"
@@ -167,22 +180,18 @@ def build_message(summary, ai_text=None):
         sections.append("━━━━━━ 大盤指數 ━━━━━━\n" + "\n".join(idx_lines))
 
     # ── 市場情緒 (VIX) ────────────────────────
-    vix_entry = scrapers.get("VIXTWN") or {}
-    val = _vix_value(vix_entry) if vix_entry.get("ok") else None
-    from_cache = val is None
-    if from_cache:
-        val = _find_previous_value("taifex_vix", today_str, _vix_value)
-    if val is not None:
-        prev = _find_previous_value("taifex_vix", today_str, _vix_value)
+    # VIX 由 13:30 排程擷取存檔，08:00 只讀最近一筆日期存檔（見 README「VIX 排程」）
+    vix_hist = _vix_history(today_str)
+    if vix_hist:
+        (cap_date, val), prev = vix_hist[0], (vix_hist[1][1] if len(vix_hist) > 1 else None)
         delta = (val - prev) if prev is not None else None
         pct = (delta / prev * 100) if (delta is not None and prev) else None
         sym = _sign_symbol(delta)
         extra = f"  {sym} {_fmt_signed(delta, 1)}（{_fmt_signed(pct, 1)}%）" if delta is not None else ""
         interp = _vix_interpret_by_change(pct)
-        cache_note = "（快取）" if from_cache else ""
         sections.append(
             "━━━━━━ 市場情緒 ━━━━━━\n"
-            f"🌡 VIX：{_fmt_number(val, 2)}{cache_note}{extra}\n"
+            f"🌡 VIX：{_fmt_number(val, 2)}（{cap_date[5:]} 13:30）{extra}\n"
             f"   {interp}"
         )
 

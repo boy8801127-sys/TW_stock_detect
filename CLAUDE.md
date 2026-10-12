@@ -39,7 +39,7 @@ python -m scrapers.twse_margin_api
 | `RETRY` | `1` | Attempts per scraper on failure |
 | `LOG_LEVEL` | `INFO` | DEBUG / INFO / WARNING / ERROR |
 
-Default scraper order (when `ORDERED_SCRAPERS` not set): `twse_margin_api`, `twse_mi_index`, `cmoney_futures_night`, `VIXTWN`, `taifex_futures`, `cmoney_margin`, `maintenance_calc`, `cnn_fear_greed`, `tsm_adr_compare`. Scrapers run only from this list (or `ORDERED_SCRAPERS`); a new scraper must be added to `DEFAULT_ORDER`.
+Default scraper order (when `ORDERED_SCRAPERS` not set): `twse_margin_api`, `twse_mi_index`, `cmoney_futures_night`, `taifex_futures`, `cmoney_margin`, `maintenance_calc`, `cnn_fear_greed`, `tsm_adr_compare`. Scrapers run only from this list (or `ORDERED_SCRAPERS`); a new scraper must be added to `DEFAULT_ORDER`. `VIXTWN` is intentionally excluded: it runs alone at 13:30 via `ORDERED_SCRAPERS=VIXTWN AUTO_SEND=false`, and the 08:00 notification reads its latest dated archive (`compose_notification._vix_history`).
 
 ## Architecture
 

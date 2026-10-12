@@ -214,14 +214,19 @@ def main():
     except Exception:
         log(f"gcs_sync.download_results failed: {traceback.format_exc()}", "WARNING")
 
-    results = [run_single_scraper(name) for name in resolve_run_list()]
+    run_names = resolve_run_list()
+    capture_only = run_names == ["VIXTWN"]  # 13:30 擷取：只存檔，不做 AI 簡評、不組訊息
+    results = [run_single_scraper(name) for name in run_names]
     summary = aggregate_results(results)
     save_summary(summary)
     send_error_report(results)
 
-    sent_ok, reason = build_and_optionally_send(summary)
-    if not sent_ok:
-        log(f"Notification/send step issue: {reason}", "WARNING")
+    if capture_only:
+        log("VIXTWN capture-only run: skipping AI summary and notification")
+    else:
+        sent_ok, reason = build_and_optionally_send(summary)
+        if not sent_ok:
+            log(f"Notification/send step issue: {reason}", "WARNING")
 
     try:
         from scrapers.gcs_sync import upload_results
@@ -232,7 +237,11 @@ def main():
     ok_count = sum(1 for _, ok, _ in results if ok)
     log(f"Scrapers done: {ok_count}/{len(results)} succeeded")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-    return 0 if summary["overall_status"] == "ok" else 2
+    # 部分失敗已由錯誤通報回報；非零結束碼會讓 Cloud Run 依 maxRetries 整個重跑，08:00 因此重複推播。
+    # 只有 13:30 擷取失敗才回傳非零，讓它重試一次。
+    if capture_only:
+        return 0 if summary["overall_status"] == "ok" else 2
+    return 0
 
 
 if __name__ == "__main__":

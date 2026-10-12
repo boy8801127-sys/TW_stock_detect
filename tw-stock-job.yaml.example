@@ -41,7 +41,7 @@ spec:
               limits:
                 cpu: 1000m
                 memory: 512Mi
-          maxRetries: 1
+          maxRetries: 0
           serviceAccountName: YOUR_SERVICE_ACCOUNT@YOUR_PROJECT_ID.iam.gserviceaccount.com
           timeoutSeconds: '600'
 
